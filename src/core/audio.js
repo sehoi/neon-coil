@@ -28,8 +28,30 @@ export function initAudio() {
   for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
 }
 
+/**
+ * AudioContext 를 깨운다.
+ *
+ * 브라우저는 탭 전환·화면 끄기·전화 인터럽션 등으로 컨텍스트를 suspend 시킨다.
+ * 첫 입력에서 한 번만 resume 하면, 그 뒤 한 번 잠든 순간부터 **영영 소리가 안 난다**.
+ * "플레이 중에 갑자기 사운드가 멈춘다"의 원인이 이것이었다.
+ * 그래서 여러 시점에서 반복 호출해도 안전하도록 만들었다 (이미 running 이면 무해).
+ */
 export function resumeAudio() {
-  if (ctx && ctx.state === 'suspended') ctx.resume();
+  if (!ctx) return;
+  if (ctx.state === 'suspended' || ctx.state === 'interrupted') {
+    const p = ctx.resume();
+    if (p && p.catch) p.catch(() => {});
+  }
+}
+
+/** 사용자 입력·탭 복귀·주기 점검에서 모두 부를 수 있는 진입점 */
+export function keepAudioAlive() {
+  if (!ctx) return;
+  resumeAudio();
+}
+
+export function audioState() {
+  return ctx ? ctx.state : 'none';
 }
 
 export function setMuted(v) {
@@ -39,7 +61,18 @@ export function setMuted(v) {
 
 export function isMuted() { return muted; }
 
+// 동시에 살아 있는 소스 노드 수. 상한을 두지 않으면 난전에서 수백 개가 쌓여
+// 오디오 스레드가 밀리고 소리가 끊긴다.
+let liveNodes = 0;
+const MAX_LIVE_NODES = 24;
+
+function trackNode(node) {
+  liveNodes++;
+  node.onended = () => { liveNodes = Math.max(0, liveNodes - 1); };
+}
+
 function tone({ type = 'square', f0, f1, dur, vol = 0.2, delay = 0 }) {
+  if (liveNodes >= MAX_LIVE_NODES) return;
   const t = ctx.currentTime + delay;
   const osc = ctx.createOscillator();
   const g = ctx.createGain();
@@ -49,11 +82,13 @@ function tone({ type = 'square', f0, f1, dur, vol = 0.2, delay = 0 }) {
   g.gain.setValueAtTime(vol, t);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   osc.connect(g).connect(master);
+  trackNode(osc);
   osc.start(t);
   osc.stop(t + dur + 0.02);
 }
 
 function noise({ dur, vol = 0.2, hp = 0, lp = 20000, delay = 0 }) {
+  if (liveNodes >= MAX_LIVE_NODES) return;
   const t = ctx.currentTime + delay;
   const src = ctx.createBufferSource();
   src.buffer = noiseBuf;
@@ -73,6 +108,7 @@ function noise({ dur, vol = 0.2, hp = 0, lp = 20000, delay = 0 }) {
     node.connect(f); node = f;
   }
   node.connect(g).connect(master);
+  trackNode(src);
   src.start(t);
   src.stop(t + dur + 0.02);
 }
@@ -97,17 +133,38 @@ const SFX = {
                    tone({ type: 'sine', f0: 600, f1: 60, dur: 0.5, vol: 0.18 }); },
   die:     () => { tone({ type: 'sawtooth', f0: 300, f1: 30, dur: 1.4, vol: 0.25 });
                    noise({ dur: 1.0, vol: 0.12, lp: 600 }); },
+
+  // 세 게임이 이 파일을 공유한다. 한 게임에서만 쓰는 이름도 여기 다 정의해 둔다 —
+  // 없는 이름을 부르면 조용히 무시되어 "소리가 안 난다"로만 보인다.
+  shield:  () => { tone({ type: 'sine', f0: 300, f1: 900, dur: 0.22, vol: 0.14 });
+                   noise({ dur: 0.16, vol: 0.05, hp: 1800 }); },
+  powerup: () => { tone({ type: 'square', f0: 520, dur: 0.07, vol: 0.10 });
+                   tone({ type: 'square', f0: 780, dur: 0.07, vol: 0.10, delay: 0.06 });
+                   tone({ type: 'sine',   f0: 1040, dur: 0.16, vol: 0.12, delay: 0.12 }); },
+  boom:    () => { tone({ type: 'sawtooth', f0: 160, f1: 28, dur: 0.6, vol: 0.26 });
+                   noise({ dur: 0.5, vol: 0.18, lp: 1400 }); },
+  wave:    () => { tone({ type: 'sine', f0: 660, dur: 0.10, vol: 0.11 });
+                   tone({ type: 'sine', f0: 990, dur: 0.18, vol: 0.12, delay: 0.09 }); },
 };
 
 export function sfx(name) {
   if (!ctx || muted) return;
+  // 잠들어 있으면 깨우고 이번 소리는 건너뛴다. resume 은 비동기다.
+  if (ctx.state !== 'running') { resumeAudio(); return; }
   const now = ctx.currentTime;
   const last = lastPlayed.get(name) || -1;
   if (now - last < (GAP[name] || MIN_GAP)) return;   // 클리핑 + 노드 폭증 방지
   lastPlayed.set(name, now);
   const fn = SFX[name];
   if (fn) fn();
+  else if (!warned.has(name)) {
+    // 정의되지 않은 이름은 조용히 사라진다. 한 번은 알려줘야 눈치챈다.
+    warned.add(name);
+    console.warn(`[audio] 정의되지 않은 효과음: "${name}"`);
+  }
 }
+
+const warned = new Set();
 
 // ── BGM: 4음 베이스 아르페지오 루프 ────────────────────────────────
 const SCALE = [55, 65.41, 82.41, 98];   // A1 C2 E2 G2
@@ -125,6 +182,7 @@ export function setMusicIntensity(t) {
 
 export function updateMusic(dt) {
   if (!musicOn || !ctx || muted) return;
+  if (ctx.state !== 'running') { resumeAudio(); return; }
   musicTimer -= dt;
   if (musicTimer > 0) return;
   musicTimer += musicRate;

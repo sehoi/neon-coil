@@ -23,6 +23,7 @@ let _lowDetail = false;
 const DETAIL_THRESHOLD = IS_TOUCH ? 2600 : 5200;   // 화면 안 세그먼트 총합 기준
 
 export function renderWorld(ctx, world) {
+  _pulseT = world.t;
   const ox = camOffsetX();
   const oy = camOffsetY();
   const W = cfg.W, H = cfg.H;
@@ -47,8 +48,9 @@ export function renderWorld(ctx, world) {
   // 화면 안 세그먼트 수를 세어 디테일 수준을 정한다
   _lowDetail = estimateVisibleSegments(world, left, right, top, bottom) > DETAIL_THRESHOLD;
 
+  const leader = world.leaders.length ? world.leaders[0] : null;
   for (const c of world.coils) {
-    if (c.alive) drawCoil(ctx, c, left, right, top, bottom, c === world.player);
+    if (c.alive) drawCoil(ctx, c, left, right, top, bottom, c === world.player, c === leader);
   }
   drawParticles(ctx, left, right, top, bottom);
 
@@ -105,7 +107,7 @@ function drawBoundary(ctx) {
  * 화면 밖 구간은 moveTo 로 건너뛴다 — 아레나가 화면보다 훨씬 크므로
  * 이 컬링이 없으면 대부분의 시간을 안 보이는 몸통에 쓴다.
  */
-function drawCoil(ctx, c, left, right, top, bottom, isPlayer) {
+function drawCoil(ctx, c, left, right, top, bottom, isPlayer, isLeader) {
   const n = bodyCount(c);
   if (n < 2) return;
 
@@ -128,6 +130,15 @@ function drawCoil(ctx, c, left, right, top, bottom, isPlayer) {
   }
 
   const w = c.radius * 2;
+
+  // 1위는 몸 전체에 금빛 외곽을 두른다 — 화면에서 누가 선두인지 바로 읽혀야 한다
+  if (isLeader) {
+    ctx.strokeStyle = C.gold;
+    ctx.globalAlpha = 0.30 + Math.sin(_pulseT * 4) * 0.12;
+    ctx.lineWidth = w * 2.3;
+    ctx.stroke();
+  }
+
   ctx.strokeStyle = c.color;
   if (SETTINGS.glow && !_lowDetail) {
     ctx.globalAlpha = 0.18;
@@ -147,10 +158,13 @@ function drawCoil(ctx, c, left, right, top, bottom, isPlayer) {
     ctx.globalAlpha = 1;
   }
 
-  drawHead(ctx, c, isPlayer);
+  drawHead(ctx, c, isPlayer, isLeader);
 }
 
-function drawHead(ctx, c, isPlayer) {
+/** 1위 표식의 맥동 위상 — 프레임마다 갱신 */
+let _pulseT = 0;
+
+function drawHead(ctx, c, isPlayer, isLeader) {
   const r = c.radius;
   ctx.fillStyle = c.color;
   disc(ctx, c.x, c.y, r * 1.08);
@@ -169,6 +183,28 @@ function drawHead(ctx, c, isPlayer) {
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 2;
     circle(ctx, c.x, c.y, r * 1.5);
+    ctx.restore();
+  }
+
+  // 1위 왕관 — 머리 위 삼각 뿔 세 개
+  if (isLeader) {
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.strokeStyle = C.gold;
+    ctx.fillStyle = C.gold;
+    ctx.lineWidth = 2;
+    const cy = c.y - r * 2.1;
+    const cw = r * 1.15;
+    ctx.beginPath();
+    ctx.moveTo(c.x - cw, cy + r * 0.5);
+    ctx.lineTo(c.x - cw * 0.62, cy - r * 0.35);
+    ctx.lineTo(c.x - cw * 0.24, cy + r * 0.16);
+    ctx.lineTo(c.x, cy - r * 0.62);
+    ctx.lineTo(c.x + cw * 0.24, cy + r * 0.16);
+    ctx.lineTo(c.x + cw * 0.62, cy - r * 0.35);
+    ctx.lineTo(c.x + cw, cy + r * 0.5);
+    ctx.closePath();
+    ctx.fill();
     ctx.restore();
   }
 

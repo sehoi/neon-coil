@@ -153,15 +153,18 @@ export function renderResult(ctx, world, save, recordRank) {
   dim(ctx, 0.85);
   const pw = 600, ph = 400;
   const px = (W - pw) / 2, py = (H - ph) / 2;
-  panel(ctx, px, py, pw, ph, world.playerRank === 1 ? C.lime : C.red);
+  // 죽는 순간의 순위를 쓴다. playerRank 는 사후에 꼴찌로 바뀐다.
+  const rank = world.finalRank || world.playerRank;
+  const wasTop = rank === 1;
+  panel(ctx, px, py, pw, ph, wasTop ? C.lime : C.red);
 
-  text(ctx, world.playerRank === 1 ? '정점에서 터졌다' : '연결 종료', W / 2, py + 60, {
-    size: 36, align: 'center', color: world.playerRank === 1 ? C.lime : C.red, glow: 18,
+  text(ctx, wasTop ? '정상에서 터졌다' : '코일 파열', W / 2, py + 60, {
+    size: 36, align: 'center', color: wasTop ? C.lime : C.red, glow: 18,
   });
 
   const rows = [
     ['최종 길이', `${Math.floor(world.bestLen)}`],
-    ['최종 순위', `${world.playerRank}위`],
+    ['최종 순위', `${rank}위 / ${world.coils.length}`],
     ['처치', `${world.player.kills}`],
     ['생존 시간', `${Math.floor(world.t)}초`],
   ];

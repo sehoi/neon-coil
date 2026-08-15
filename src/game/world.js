@@ -32,6 +32,7 @@ export function createWorld() {
     bestLen: 0,
     eaten: 0,
     banner: null,
+    finalRank: 0,     // 죽는 순간의 순위 (결과 화면용)
   };
 
   world.spawnLeak = (x, y) => spawnFood(world.food, x, y, 'leak');
@@ -60,6 +61,7 @@ export function startRun(world) {
   world.bestLen = COIL.startLen;
   world.eaten = 0;
   world.banner = null;
+  world.finalRank = 0;
 
   world.food.clear();
   clearParticles();
@@ -104,6 +106,9 @@ function killCoil(world, c, killer) {
   if (killer && killer !== c) killer.kills++;
 
   if (c.isPlayer) {
+    // 죽는 순간의 순위를 붙잡는다. 리더보드는 살아 있는 코일만 세므로,
+    // 죽고 나면 순위가 꼴찌로 바뀌어 "1등이었는데 18위"로 표시된다.
+    world.finalRank = world.playerRank;
     world.over = true;
     addShake(20);
     sfx('die');
