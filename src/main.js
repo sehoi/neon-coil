@@ -5,14 +5,14 @@ import * as cfg from './config.js';
 import { STEP, MAX_FRAME, SETTINGS, IS_TOUCH, MAX_DPR, C, setViewport } from './config.js';
 import { initInput, pollInput, endFrameInput, input, keyPressed, clearTouchState } from './core/input.js';
 import { initAudio, resumeAudio, setMuted, sfx, startMusic, stopMusic, updateMusic, setMusicIntensity } from './core/audio.js';
-import { loadSave, persist } from './core/save.js';
+import { loadSave, persist, submitRecord } from './core/save.js';
 import { seed } from './core/rng.js';
 
 import { createWorld, startRun, updateWorld } from './game/world.js';
 import { camera } from './game/camera.js';
 import { renderWorld } from './render/renderer.js';
 import { renderHud } from './ui/hud.js';
-import { renderTitle, renderHelp, renderPause, renderResult } from './ui/screens.js';
+import { renderTitle, renderHelp, renderPause, renderResult, renderBoard } from './ui/screens.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d', { alpha: false });
@@ -62,11 +62,12 @@ seed(Date.now() & 0x7fffffff);
 const world = createWorld();
 
 const S = {
-  TITLE: 'title', HELP: 'help',
+  TITLE: 'title', HELP: 'help', BOARD: 'board',
   PLAYING: 'playing', PAUSED: 'paused', RESULT: 'result',
 };
 let state = S.TITLE;
-let resultIsBest = false;
+let recordRank = 0;
+let boardFrom = S.TITLE;
 
 initInput(canvas, () => {
   if (state === S.PLAYING) state = S.PAUSED;
@@ -101,11 +102,12 @@ function requestFullscreenIfMobile() {
 
 function endRun() {
   const b = save.best;
-  resultIsBest = world.bestLen > b.len;
   if (world.bestLen > b.len) b.len = Math.floor(world.bestLen);
   if (world.playerRank < b.rank) b.rank = world.playerRank;
   if (world.player.kills > b.kills) b.kills = world.player.kills;
   if (world.t > b.time) b.time = Math.floor(world.t);
+
+  recordRank = submitRecord(world.bestLen, world.playerRank, world.player.kills, world.t);
   persist();
   stopMusic();
   state = S.RESULT;
@@ -180,6 +182,7 @@ function render() {
       const r = renderTitle(ctx, save);
       if (r.start) { sfx('select'); beginRun(); }
       if (r.help) { sfx('select'); state = S.HELP; }
+      if (r.board) { sfx('select'); boardFrom = S.TITLE; state = S.BOARD; }
       if (r.fullscreen) {
         sfx('select');
         if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
@@ -192,6 +195,13 @@ function render() {
       renderWorld(ctx, world);
       const r = renderHelp(ctx);
       if (r.back) { sfx('select'); state = S.TITLE; }
+      break;
+    }
+
+    case S.BOARD: {
+      renderWorld(ctx, world);
+      const r = renderBoard(ctx, save, boardFrom === S.RESULT ? recordRank : 0);
+      if (r.back) { sfx('select'); state = boardFrom; }
       break;
     }
 
@@ -214,8 +224,9 @@ function render() {
 
     case S.RESULT: {
       renderWorld(ctx, world);
-      const r = renderResult(ctx, world, save, resultIsBest);
+      const r = renderResult(ctx, world, save, recordRank);
       if (r.retry) { sfx('select'); beginRun(); }
+      if (r.board) { sfx('select'); boardFrom = S.RESULT; state = S.BOARD; }
       if (r.title) { sfx('select'); state = S.TITLE; }
       break;
     }
@@ -288,7 +299,10 @@ window.NC = {
     const n = Math.round(seconds / STEP);
     for (let i = 0; i < n; i++) {
       world.player.targetAngle = world.t * 0.7;
-      for (const c of world.coils) if (c.alive) c.len = Math.min(420, c.len + 0.9);
+      // targetLen 이 실제 길이다. len 은 easeLength 가 여기로 수렴시킨다.
+      for (const c of world.coils) if (c.alive) {
+        c.targetLen = Math.min(420, c.targetLen + 0.9);
+      }
       update(STEP);
     }
     if (!keepGod) for (const c of world.coils) c.godMode = false;

@@ -171,6 +171,16 @@ function drawHead(ctx, c, isPlayer) {
     circle(ctx, c.x, c.y, r * 1.5);
     ctx.restore();
   }
+
+  // 차폐 — 한 번은 버틴다는 걸 보여줘야 한다
+  if (c.shieldT > 0) {
+    ctx.save();
+    ctx.globalAlpha = 0.4 + Math.sin(c.shieldT * 9) * 0.2;
+    ctx.strokeStyle = C.mint;
+    ctx.lineWidth = 3;
+    circle(ctx, c.x, c.y, r * 2.1);
+    ctx.restore();
+  }
   if (c.boosting) {
     ctx.save();
     ctx.globalAlpha = 0.35;
@@ -180,7 +190,44 @@ function drawHead(ctx, c, isPlayer) {
   }
 }
 
-const _foodGroups = { bit: [], block: [], debris: [], leak: [] };
+const _foodGroups = { bit: [], block: [], debris: [], leak: [], shield: [], surge: [], magnet: [] };
+
+// 강화 아이템 기호 — 먹이(단순한 원)와 한눈에 구분되어야 한다
+const BOOST_SYMBOL = {
+  shield: (ctx, x, y, u) => {   // 방패
+    ctx.beginPath();
+    ctx.moveTo(x, y - u);
+    ctx.lineTo(x + u * 0.78, y - u * 0.4);
+    ctx.lineTo(x + u * 0.6, y + u * 0.72);
+    ctx.lineTo(x, y + u);
+    ctx.lineTo(x - u * 0.6, y + u * 0.72);
+    ctx.lineTo(x - u * 0.78, y - u * 0.4);
+    ctx.closePath();
+    ctx.fill();
+  },
+  surge: (ctx, x, y, u) => {    // 번개
+    ctx.beginPath();
+    ctx.moveTo(x + u * 0.2, y - u);
+    ctx.lineTo(x - u * 0.65, y + u * 0.12);
+    ctx.lineTo(x - u * 0.05, y + u * 0.12);
+    ctx.lineTo(x - u * 0.2, y + u);
+    ctx.lineTo(x + u * 0.65, y - u * 0.12);
+    ctx.lineTo(x + u * 0.05, y - u * 0.12);
+    ctx.closePath();
+    ctx.fill();
+  },
+  magnet: (ctx, x, y, u) => {   // 안쪽을 향한 화살표들
+    ctx.lineWidth = u * 0.34;
+    ctx.beginPath();
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * TAU + Math.PI / 4;
+      const cx = Math.cos(a), cy = Math.sin(a);
+      ctx.moveTo(x + cx * u, y + cy * u);
+      ctx.lineTo(x + cx * u * 0.3, y + cy * u * 0.3);
+    }
+    ctx.stroke();
+  },
+};
 
 function drawFood(ctx, world, left, right, top, bottom) {
   for (const k in _foodGroups) _foodGroups[k].length = 0;
@@ -192,17 +239,26 @@ function drawFood(ctx, world, left, right, top, bottom) {
     const list = _foodGroups[kind];
     if (!list.length) continue;
     const col = list[0].color;
+    const symbol = BOOST_SYMBOL[kind];
 
     if (SETTINGS.glow && !_lowDetail && kind !== 'bit') {
-      ctx.globalAlpha = 0.2;
+      ctx.globalAlpha = symbol ? 0.3 : 0.2;
       ctx.fillStyle = col;
-      for (const f of list) disc(ctx, f.x, f.y, f.r * 2.2);
+      for (const f of list) disc(ctx, f.x, f.y, f.r * (symbol ? 2.6 : 2.2));
     }
     ctx.globalAlpha = 1;
     ctx.fillStyle = col;
     for (const f of list) {
-      const pulse = 1 + Math.sin(f.age * 5) * 0.12;
+      const pulse = 1 + Math.sin(f.age * (symbol ? 7 : 5)) * 0.12;
       disc(ctx, f.x, f.y, f.r * pulse);
+    }
+
+    // 강화 아이템은 안에 기호를 파낸다
+    if (symbol) {
+      ctx.fillStyle = '#04060f';
+      ctx.strokeStyle = '#04060f';
+      ctx.lineCap = 'round';
+      for (const f of list) symbol(ctx, f.x, f.y, f.r * 0.62);
     }
   }
 }

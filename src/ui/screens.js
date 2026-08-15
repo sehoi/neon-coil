@@ -22,13 +22,14 @@ export function renderTitle(ctx, save) {
     size: 16, align: 'center', color: C.dim,
   });
 
-  const bw = 300, bh = 52, bx = (W - bw) / 2;
+  const bw = 300, bh = 50, bx = (W - bw) / 2;
   const r = {
-    start: button(ctx, bx, 296, bw, bh, '접속  ▶'),
-    help:  button(ctx, bx, 358, bw, bh, '조작법', { color: C.dim, size: 18 }),
+    start: button(ctx, bx, 286, bw, bh, '접속  ▶'),
+    board: button(ctx, bx, 344, bw, bh, '기록', { color: C.gold, size: 18 }),
+    help:  button(ctx, bx, 402, bw, bh, '조작법', { color: C.dim, size: 18 }),
   };
   if (IS_TOUCH && document.fullscreenEnabled) {
-    r.fullscreen = button(ctx, bx, 420, bw, 42,
+    r.fullscreen = button(ctx, bx, 460, bw, 40,
       document.fullscreenElement ? '전체화면 해제' : '전체화면', { color: C.dim, size: 16 });
   }
 
@@ -40,6 +41,49 @@ export function renderTitle(ctx, save) {
                      : '마우스로 조종 · 클릭 또는 Space 로 가속',
     W / 2, H - 28, { size: 13, align: 'center', color: '#4a5578' });
   return r;
+}
+
+/** 로컬 기록 — 길이 기준 상위 8개 */
+export function renderBoard(ctx, save, highlightRank = 0) {
+  const W = cfg.W, H = cfg.H;
+  dim(ctx, 0.88);
+  const pw = 700, ph = 480;
+  const px = (W - pw) / 2, py = (H - ph) / 2;
+  panel(ctx, px, py, pw, ph, C.gold);
+
+  text(ctx, '기록', px + pw / 2, py + 44, { size: 28, align: 'center', color: C.gold, glow: 12 });
+
+  if (!save.board.length) {
+    text(ctx, '아직 기록이 없다', px + pw / 2, py + 130, {
+      size: 16, align: 'center', color: C.dim,
+    });
+  } else {
+    text(ctx, '순위', px + 44, py + 84, { size: 12, color: C.dim });
+    text(ctx, '길이', px + 130, py + 84, { size: 12, color: C.dim });
+    text(ctx, '최종 순위', px + pw - 230, py + 84, { size: 12, align: 'right', color: C.dim });
+    text(ctx, '처치', px + pw - 130, py + 84, { size: 12, align: 'right', color: C.dim });
+    text(ctx, '생존', px + pw - 40, py + 84, { size: 12, align: 'right', color: C.dim });
+
+    save.board.forEach((e, i) => {
+      const y = py + 118 + i * 38;
+      const me = (i + 1) === highlightRank;
+      const col = me ? C.cyan : (i === 0 ? C.gold : C.text);
+      if (me) {
+        ctx.save();
+        ctx.globalAlpha = 0.12;
+        ctx.fillStyle = C.cyan;
+        ctx.fillRect(px + 30, y - 19, pw - 60, 28);
+        ctx.restore();
+      }
+      text(ctx, `${i + 1}`, px + 50, y, { size: 16, align: 'center', color: col });
+      text(ctx, `${e.len}`, px + 130, y, { size: 18, color: col });
+      text(ctx, `${e.rank}위`, px + pw - 230, y, { size: 14, align: 'right', color: me ? C.cyan : C.dim });
+      text(ctx, `${e.kills}`, px + pw - 130, y, { size: 14, align: 'right', color: me ? C.cyan : C.dim });
+      text(ctx, `${e.time}초`, px + pw - 40, y, { size: 14, align: 'right', color: me ? C.cyan : C.dim });
+    });
+  }
+
+  return { back: button(ctx, px + pw / 2 - 90, py + ph - 58, 180, 42, '돌아가기', { size: 17 }) };
 }
 
 export function renderHelp(ctx) {
@@ -104,7 +148,7 @@ export function renderPause(ctx, world) {
   return r;
 }
 
-export function renderResult(ctx, world, save, isBest) {
+export function renderResult(ctx, world, save, recordRank) {
   const W = cfg.W, H = cfg.H;
   dim(ctx, 0.85);
   const pw = 600, ph = 400;
@@ -128,12 +172,15 @@ export function renderResult(ctx, world, save, isBest) {
     y += 36;
   }
 
-  if (isBest) {
-    text(ctx, '최고 기록 갱신', W / 2, y + 12, { size: 17, align: 'center', color: C.gold, glow: 10 });
+  if (recordRank) {
+    text(ctx, recordRank === 1 ? '신기록 · 1위' : `기록 ${recordRank}위`, W / 2, y + 12, {
+      size: 17, align: 'center', color: C.gold, glow: 10,
+    });
   }
 
   return {
-    retry: button(ctx, px + pw / 2 - 200, py + ph - 68, 190, 46, '재접속  [R]', { size: 18 }),
-    title: button(ctx, px + pw / 2 + 10, py + ph - 68, 190, 46, '타이틀', { color: C.dim, size: 18 }),
+    retry: button(ctx, px + 60, py + ph - 68, 170, 46, '재접속  [R]', { size: 17 }),
+    board: button(ctx, px + 244, py + ph - 68, 112, 46, '기록', { color: C.gold, size: 16 }),
+    title: button(ctx, px + pw - 230, py + ph - 68, 170, 46, '타이틀', { color: C.dim, size: 17 }),
   };
 }

@@ -1,6 +1,6 @@
 // 월드: 아레나, 코일 소유, 업데이트 순서.
 
-import { GRID_CELL } from '../config.js';
+import { GRID_CELL, C } from '../config.js';
 import { createGrid } from '../core/grid.js';
 import { rnd, range, irange } from '../core/rng.js';
 import { sfx } from '../core/audio.js';
@@ -8,7 +8,8 @@ import { ARENA_RADIUS, NPC, COIL } from '../data/tuning.js';
 
 import { createCoil, spawnCoil, updateCoil, outOfBounds, randomSpawnPoint, bodyCount, segX, segY } from './coil.js';
 import { makeAI, steerAI } from './ai.js';
-import { createFoodPool, scatterFood, scatterDebris, spawnFood, eatNearby, updateFood, buildFoodGrid } from './food.js';
+import { createFoodPool, scatterFood, scatterDebris, dropBoostItem, spawnFood, eatNearby, updateFood, buildFoodGrid } from './food.js';
+import { BOOST_ITEM } from '../data/tuning.js';
 import { buildSegmentGrid, headHitsBody, resolveHeadCollisions } from './collide.js';
 import { burst, flash, updateParticles, clearParticles } from './particle.js';
 import { addShake, resetCamera, updateCamera } from './camera.js';
@@ -30,10 +31,23 @@ export function createWorld() {
     playerRank: 1,
     bestLen: 0,
     eaten: 0,
+    banner: null,
   };
 
   world.spawnLeak = (x, y) => spawnFood(world.food, x, y, 'leak');
   world.onPlayerEat = () => { world.eaten++; };
+
+  world.applyBoost = (c, kind) => {
+    if (kind === 'shield') c.shieldT = BOOST_ITEM.shieldDuration;
+    else if (kind === 'surge') c.surgeT = BOOST_ITEM.surgeDuration;
+    else if (kind === 'magnet') c.magnetT = BOOST_ITEM.magnetDuration;
+    if (c.isPlayer) {
+      world.banner = { text: kind === 'shield' ? '차폐 가동'
+                           : kind === 'surge' ? '과급 가동' : '흡인 가동', life: 1.4 };
+      sfx('heal');
+    }
+  };
+
   return world;
 }
 
@@ -45,6 +59,7 @@ export function startRun(world) {
   world.playerRank = 1;
   world.bestLen = COIL.startLen;
   world.eaten = 0;
+  world.banner = null;
 
   world.food.clear();
   clearParticles();
@@ -56,7 +71,7 @@ export function startRun(world) {
 
   for (let i = 1; i < world.coils.length; i++) {
     const c = world.coils[i];
-    const s = randomSpawnPoint();
+    const s = randomSpawnPoint(world);
     spawnCoil(c, s.x, s.y, s.angle, false, i);
     c.ai = makeAI(i);
     c.aiTimer = i % NPC.aiIntervalFrames;   // 판단 프레임을 흩어 스파이크를 막는다
@@ -69,8 +84,22 @@ export function startRun(world) {
 function killCoil(world, c, killer) {
   if (!c.alive) return;
   if (c.godMode) return;   // 성능 측정용 — 프로덕션 경로에서는 절대 설정되지 않는다
+
+  // 차폐가 있으면 한 번 버틴다
+  if (c.shieldT > 0) {
+    c.shieldT = 0;
+    burst(c.x, c.y, C.mint, 18, 240, 5);
+    if (c.isPlayer) {
+      addShake(10);
+      world.banner = { text: '차폐 소멸', life: 1.2 };
+    }
+    sfx('shield');
+    return;
+  }
+
   c.alive = false;
   scatterDebris(world.food, c);
+  dropBoostItem(world.food, c);   // 큰 코일이었다면 강화 아이템을 남긴다
   burst(c.x, c.y, c.color, c.isPlayer ? 34 : 14, 260, 5);
   if (killer && killer !== c) killer.kills++;
 
@@ -103,7 +132,7 @@ export function updateWorld(world, dt) {
     else if (!c.isPlayer) {
       c.respawnIn -= dt;
       if (c.respawnIn <= 0) {
-        const s = randomSpawnPoint();
+        const s = randomSpawnPoint(world);   // 플레이어 머리 위에 태어나지 않게
         const idx = world.coils.indexOf(c);
         spawnCoil(c, s.x, s.y, s.angle, false, idx);
         c.ai = makeAI(idx);
@@ -138,7 +167,12 @@ export function updateWorld(world, dt) {
   updateParticles(dt);
   updateCamera(p.alive ? p : { x: p.x, y: p.y }, dt);
 
-  if (p.alive && p.len > world.bestLen) world.bestLen = p.len;
+  if (world.banner) {
+    world.banner.life -= dt;
+    if (world.banner.life <= 0) world.banner = null;
+  }
+
+  if (p.alive && p.targetLen > world.bestLen) world.bestLen = p.targetLen;
 
   // 7) 리더보드 (0.5초마다 — 매 프레임 정렬은 낭비)
   world.leaderTimer -= dt;

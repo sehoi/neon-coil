@@ -8,8 +8,12 @@ const VERSION = 1;
 const DEFAULT = {
   v: VERSION,
   best: { len: 0, rank: 99, kills: 0, time: 0 },
+  /** 로컬 기록 — 상위 8개. { len, rank, kills, time, date } */
+  board: [],
   settings: { glow: true, muted: false, shake: 1.0, showFps: false },
 };
+
+export const BOARD_SIZE = 8;
 
 let data = clone(DEFAULT);
 
@@ -24,6 +28,7 @@ export function loadSave() {
         data = Object.assign(clone(DEFAULT), parsed);
         data.best = Object.assign(clone(DEFAULT.best), parsed.best);
         data.settings = Object.assign(clone(DEFAULT.settings), parsed.settings);
+        data.board = Array.isArray(parsed.board) ? parsed.board.slice(0, BOARD_SIZE) : [];
       }
     }
   } catch {
@@ -37,6 +42,20 @@ export function loadSave() {
 }
 
 export function getSave() { return data; }
+
+/**
+ * 기록을 남긴다. 정렬 기준은 **길이** — 이 게임의 목표가 길어지는 것이다.
+ * @returns {number} 1부터 시작하는 순위. 진입 실패면 0.
+ */
+export function submitRecord(len, rank, kills, time) {
+  const entry = { len: Math.floor(len), rank, kills, time: Math.floor(time), date: Date.now() };
+  data.board.push(entry);
+  data.board.sort((a, b) => b.len - a.len);
+  data.board = data.board.slice(0, BOARD_SIZE);
+  persist();
+  const idx = data.board.indexOf(entry);
+  return idx >= 0 ? idx + 1 : 0;
+}
 
 export function persist() {
   try {

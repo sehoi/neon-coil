@@ -1,9 +1,9 @@
 // 데이터 조각: 스폰 유지 · 흡인 · 흡수.
 
 import { createPool } from '../core/pool.js';
-import { rnd, range } from '../core/rng.js';
+import { rnd, range, pick } from '../core/rng.js';
 import { dist2 } from '../core/vec.js';
-import { FOOD, ARENA_RADIUS, COIL } from '../data/tuning.js';
+import { FOOD, ARENA_RADIUS, COIL, BOOST_ITEM } from '../data/tuning.js';
 import { C } from '../config.js';
 import { addLength } from './coil.js';
 
@@ -17,7 +17,13 @@ export const KIND_STYLE = {
   block:  { r: 7, color: C.gold,  value: FOOD.blockValue },
   debris: { r: 9, color: '#ffffff', value: FOOD.debrisValue },
   leak:   { r: 3, color: C.cyan,  value: FOOD.leakValue },
+  // 강화 아이템 — 큰 코일이 죽을 때만 나온다. 경험치가 아니라 효과를 준다.
+  shield: { r: 13, color: C.mint,   value: 0, boost: true },
+  surge:  { r: 13, color: C.orange, value: 0, boost: true },
+  magnet: { r: 13, color: C.violet, value: 0, boost: true },
 };
+
+export const BOOST_KINDS = ['shield', 'surge', 'magnet'];
 
 export function createFoodPool() {
   return createPool(makeFood, 2600);
@@ -45,6 +51,18 @@ export function scatterFood(pool, n) {
   }
 }
 
+/**
+ * 큰 코일이 죽으면 강화 아이템을 하나 떨어뜨린다.
+ * 큰 상대를 잡는 건 위험한 일이고, 잔해만으로는 그 위험이 보상되지 않는다.
+ */
+export function dropBoostItem(pool, c) {
+  if (c.targetLen < BOOST_ITEM.minLenToDrop) return null;
+  const kind = pick(BOOST_KINDS);
+  const f = spawnFood(pool, c.x, c.y, kind);
+  f.vx = 0; f.vy = 0;
+  return f;
+}
+
 /** 코일이 죽으면 몸 길이에 비례한 잔해를 뿌린다. */
 export function scatterDebris(pool, c) {
   const n = Math.min(FOOD.deathDropMax, Math.max(6, Math.floor(c.len * FOOD.deathDropRatio / 3)));
@@ -65,14 +83,17 @@ let _eatCoil = null, _eatWorld = null;
 function _eatCb(f) {
   if (!f.alive) return;
   const c = _eatCoil;
-  const reach = c.radius + COIL.magnet;
+  // 자석 효과 중에는 훨씬 멀리서도 끌어온다
+  const magnet = c.magnetT > 0 ? BOOST_ITEM.magnetRadius : COIL.magnet;
+  const reach = c.radius + magnet;
   const d2 = dist2(c.x, c.y, f.x, f.y);
   if (d2 > reach * reach) return;
 
   const swallow = c.radius + f.r;
   if (d2 <= swallow * swallow) {
     f.alive = false;
-    addLength(c, f.value);
+    if (KIND_STYLE[f.kind].boost) _eatWorld.applyBoost(c, f.kind);
+    else addLength(c, f.value);
     if (c.isPlayer) _eatWorld.onPlayerEat(f);
     return;
   }
@@ -88,6 +109,8 @@ export function eatNearby(world, c) {
 export function updateFood(world, dt) {
   world.food.forEach(f => {
     f.age += dt;
+    // 강화 아이템은 방치되면 사라진다 — 맵에 영원히 쌓이지 않게
+    if (KIND_STYLE[f.kind].boost && f.age > BOOST_ITEM.lifetime) { f.alive = false; return; }
     if (f.pull && f.pull.alive) {
       const dx = f.pull.x - f.x, dy = f.pull.y - f.y;
       const d = Math.hypot(dx, dy) || 1;

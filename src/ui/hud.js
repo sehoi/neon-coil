@@ -6,33 +6,42 @@ import { C, IS_TOUCH, TOUCH_UI } from '../config.js';
 import { text, bar } from './widgets.js';
 import { circle, disc, line } from '../render/shapes.js';
 import { getTouchStick, isBoostHeld } from '../core/input.js';
-import { ARENA_RADIUS, COIL } from '../data/tuning.js';
+import { ARENA_RADIUS, COIL, BOOST_ITEM } from '../data/tuning.js';
 import { TAU } from '../core/vec.js';
 
 export function renderHud(ctx, world) {
   const W = cfg.W, H = cfg.H;
   const p = world.player;
 
-  // ── 좌상단: 길이 · 순위 ──
-  text(ctx, `${Math.floor(p.len)}`, 20, IS_TOUCH ? 46 : 44, {
-    size: 38, color: C.cyan, glow: 10,
-  });
-  text(ctx, '길이', 20, IS_TOUCH ? 66 : 64, { size: 13, color: C.dim });
-  text(ctx, `${world.playerRank}위 / ${world.coils.length}`, 96, IS_TOUCH ? 66 : 64, {
+  // ── 좌상단: 길이 · 순위 (상단 끝에 붙이면 노치에 잘린다) ──
+  const top = IS_TOUCH ? 60 : 46;
+  text(ctx, `${Math.floor(p.targetLen)}`, 20, top, { size: 38, color: C.cyan, glow: 10 });
+  text(ctx, '길이', 20, top + 20, { size: 13, color: C.dim });
+  text(ctx, `${world.playerRank}위 / ${world.coils.length}`, 96, top + 20, {
     size: 14, color: C.text,
   });
   if (p.kills > 0) {
-    text(ctx, `처치 ${p.kills}`, 190, IS_TOUCH ? 66 : 64, { size: 13, color: C.gold });
+    text(ctx, `처치 ${p.kills}`, 190, top + 20, { size: 13, color: C.gold });
   }
+
+  drawBoostStatus(ctx, p, top + 44);
 
   // 부스트 가능 여부 게이지 (데스크톱)
   if (!IS_TOUCH) {
-    const ratio = Math.min(1, (p.len - COIL.boostMinLen) / 60);
-    bar(ctx, 20, 76, 150, 6, Math.max(0, ratio), p.len > COIL.boostMinLen ? C.lime : C.red, '#141a30');
+    const ratio = Math.min(1, (p.targetLen - COIL.boostMinLen) / 60);
+    bar(ctx, 20, top + 30, 150, 5, Math.max(0, ratio),
+      p.targetLen > COIL.boostMinLen ? C.lime : C.red, '#141a30');
   }
 
   drawLeaderboard(ctx, world, W);
   drawMinimap(ctx, world, W, H);
+
+  if (world.banner) {
+    const a = Math.min(1, world.banner.life / 0.4);
+    text(ctx, world.banner.text, W / 2, H * 0.30, {
+      size: 30, align: 'center', color: C.mint, glow: 14, alpha: a,
+    });
+  }
 
   if (IS_TOUCH) {
     drawTouchControls(ctx, world);
@@ -40,21 +49,40 @@ export function renderHud(ctx, world) {
   }
 }
 
+/**
+ * 순위표. 각 코일의 색을 점으로 함께 보여준다 —
+ * 이름만으로는 화면의 어느 코일인지 알 수 없다.
+ */
 function drawLeaderboard(ctx, world, W) {
-  const x = W - 18;
-  let y = IS_TOUCH ? 34 : 32;
-  text(ctx, '순위', x, y, { size: 13, align: 'right', color: C.dim });
-  y += 20;
+  const right = W - 18;
+  // 첫 줄을 화면 맨 위에 붙이면 노치·둥근 모서리에 잘린다. 넉넉히 내린다.
+  let y = IS_TOUCH ? 52 : 40;
+  text(ctx, '순위', right, y, { size: 12, align: 'right', color: C.dim });
+  y += 22;
+
   for (let i = 0; i < world.leaders.length; i++) {
     const c = world.leaders[i];
     const me = c === world.player;
-    text(ctx, `${i + 1}. ${c.name}`, x - 62, y, {
-      size: 14, align: 'right', color: me ? C.cyan : C.text, alpha: me ? 1 : 0.85,
+
+    // 색 점 — 화면의 어느 코일인지 바로 알 수 있게
+    ctx.save();
+    ctx.fillStyle = c.color;
+    disc(ctx, right - 150, y - 4, 4.5);
+    if (me) {
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.4;
+      circle(ctx, right - 150, y - 4, 7);
+    }
+    ctx.restore();
+
+    text(ctx, `${i + 1}`, right - 162, y, { size: 13, align: 'right', color: me ? C.cyan : C.dim });
+    text(ctx, c.name, right - 138, y, {
+      size: 14, color: me ? C.cyan : C.text, alpha: me ? 1 : 0.9,
     });
-    text(ctx, `${Math.floor(c.len)}`, x, y, {
+    text(ctx, `${Math.floor(c.len)}`, right, y, {
       size: 14, align: 'right', color: me ? C.cyan : C.dim,
     });
-    y += 19;
+    y += 20;
   }
 }
 
@@ -88,6 +116,22 @@ function drawMinimap(ctx, world, W, H) {
     disc(ctx, cx + p.x * scale, cy + p.y * scale, 3.5);
   }
   ctx.restore();
+}
+
+/** 활성화된 강화 효과 — 남은 시간을 짧은 바로 보여준다 */
+function drawBoostStatus(ctx, p, y) {
+  const items = [
+    { t: p.shieldT, max: BOOST_ITEM.shieldDuration, color: C.mint,   label: '차폐' },
+    { t: p.surgeT,  max: BOOST_ITEM.surgeDuration,  color: C.orange, label: '과급' },
+    { t: p.magnetT, max: BOOST_ITEM.magnetDuration, color: C.violet, label: '흡인' },
+  ];
+  let x = 20;
+  for (const it of items) {
+    if (it.t <= 0) continue;
+    text(ctx, it.label, x, y, { size: 12, color: it.color });
+    bar(ctx, x, y + 5, 52, 4, it.t / it.max, it.color, '#141a30');
+    x += 64;
+  }
 }
 
 /** 모바일 전용: 부스트 버튼 + 일시정지 버튼 */

@@ -53,6 +53,19 @@ export const FOOD = {
   deathDropMax: 90,   // 잔해 개수 상한 — 거대 코일이 죽어도 프레임을 지킨다
 };
 
+/**
+ * 강화 아이템.
+ * 큰 코일을 잡는 것은 위험하다 — 잔해(경험치)만으로는 그 위험이 보상되지 않는다.
+ */
+export const BOOST_ITEM = {
+  minLenToDrop: 110,     // 이 길이 이상인 코일이 죽어야 떨어진다
+  shieldDuration: 9,     // 몸통에 부딪혀도 1회 버틴다
+  surgeDuration: 8,      // 부스트가 길이를 태우지 않는다
+  magnetDuration: 7,     // 주변 먹이를 끌어온다
+  magnetRadius: 320,
+  lifetime: 22,          // 이 시간이 지나면 사라진다
+};
+
 export const NPC = {
   count: 19,
   respawnMin: 3,

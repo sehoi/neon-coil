@@ -18,7 +18,12 @@ export function createCoil() {
     speed: COIL.speed,
     boosting: false,
 
-    len: COIL.startLen,       // 논리 길이 = 궤적 점 개수
+    // 논리 길이 = 궤적 점 개수.
+    // targetLen 이 "실제로 먹은 길이", len 은 "지금 화면에 보이는 길이"다.
+    // 둘을 나눈 이유 — len 을 즉시 바꾸면 꼬리 끝이 과거 궤적으로 순간이동해
+    // "꼬리가 사라지는 게 아니라 다시 생기는" 것처럼 보인다.
+    len: COIL.startLen,
+    targetLen: COIL.startLen,
     lenFrac: 0,               // 소수점 누적 (먹이/부스트로 조금씩 변한다)
     radius: COIL.radiusMin,
     spacing: 4,
@@ -28,6 +33,9 @@ export function createCoil() {
     head: 0,
     count: 0,
     sinceLastPoint: 0,
+
+    // 강화 효과 남은 시간
+    shieldT: 0, surgeT: 0, magnetT: 0,
 
     alive: false,
     isPlayer: false,
@@ -46,6 +54,7 @@ export function spawnCoil(c, x, y, angle, isPlayer, index) {
   c.targetAngle = angle;
   c.boosting = false;
   c.len = COIL.startLen;
+  c.targetLen = COIL.startLen;
   c.lenFrac = 0;
   c.radius = radiusFor(c.len);
   c.spacing = c.radius * COIL.spacingRatio;
@@ -53,6 +62,7 @@ export function spawnCoil(c, x, y, angle, isPlayer, index) {
   c.count = 0;
   c.sinceLastPoint = 0;
   c.alive = true;
+  c.shieldT = 0; c.surgeT = 0; c.magnetT = 0;
   c.godMode = false;   // 재시작하면 테스트 플래그가 남지 않게 한다
   c.isPlayer = isPlayer;
   c.kills = 0;
@@ -97,10 +107,16 @@ export function updateCoil(c, dt, world) {
   const diff = wrapAngle(c.targetAngle - c.angle);
   c.angle += Math.abs(diff) <= turn ? diff : Math.sign(diff) * turn;
 
-  // 부스트: 길이를 태워 속도를 얻는다
-  const canBoost = c.boosting && c.len > COIL.boostMinLen;
+  easeLength(c, dt);
+
+  c.shieldT = Math.max(0, c.shieldT - dt);
+  c.surgeT = Math.max(0, c.surgeT - dt);
+  c.magnetT = Math.max(0, c.magnetT - dt);
+
+  // 부스트: 길이를 태워 속도를 얻는다 (서지 중에는 공짜)
+  const canBoost = c.boosting && (c.surgeT > 0 || c.targetLen > COIL.boostMinLen);
   c.speed = canBoost ? COIL.boostSpeed : COIL.speed;
-  if (canBoost) {
+  if (canBoost && c.surgeT <= 0) {
     const drain = COIL.boostDrainPerSec * dt;
     addLength(c, -drain);
     // 태운 만큼 꼬리에서 흘린다 — 남이 주울 수 있어야 추격에 의미가 생긴다
@@ -132,14 +148,24 @@ export function updateCoil(c, dt, world) {
   }
 }
 
-/** 길이를 늘리거나 줄인다. 소수점은 누적해서 처리한다. */
+/** 길이를 늘리거나 줄인다. 실제 반영은 updateCoil 이 부드럽게 따라간다. */
 export function addLength(c, amount) {
   c.lenFrac += amount;
   const whole = Math.trunc(c.lenFrac);
   if (whole !== 0) {
     c.lenFrac -= whole;
-    c.len = Math.max(5, Math.min(COIL.maxLen, c.len + whole));
+    c.targetLen = Math.max(5, Math.min(COIL.maxLen, c.targetLen + whole));
   }
+}
+
+/**
+ * 보이는 길이를 목표 길이로 수렴시킨다.
+ * 즉시 바꾸면 꼬리 끝이 과거 궤적으로 순간이동해 몸이 되살아난 것처럼 보인다.
+ */
+function easeLength(c, dt) {
+  const diff = c.targetLen - c.len;
+  if (Math.abs(diff) < 0.5) { c.len = c.targetLen; return; }
+  c.len += diff * Math.min(1, dt * 7);
 }
 
 export function headHitRadius(c) {
@@ -151,9 +177,45 @@ export function outOfBounds(c) {
   return Math.hypot(c.x, c.y) > ARENA_RADIUS;
 }
 
-export function randomSpawnPoint() {
-  // 경계에서 조금 안쪽, 랜덤 방향
-  const a = rnd() * TAU;
-  const d = range(ARENA_RADIUS * 0.35, ARENA_RADIUS * 0.85);
-  return { x: Math.cos(a) * d, y: Math.sin(a) * d, angle: a + Math.PI + range(-0.6, 0.6) };
+const SPAWN_CLEARANCE = 420;   // 다른 코일 몸통에서 이만큼은 떨어져야 한다
+
+/**
+ * 리스폰 지점.
+ *
+ * 순수 랜덤이면 하필 플레이어 머리 위에 나타나 태어나자마자 죽는 일이 생긴다.
+ * 다른 코일의 몸통에서 충분히 떨어진 곳을 몇 번 찾아보고,
+ * 끝내 못 찾으면 그중 가장 여유로운 후보를 쓴다.
+ */
+export function randomSpawnPoint(world) {
+  let best = null, bestClear = -1;
+
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const a = rnd() * TAU;
+    const d = range(ARENA_RADIUS * 0.30, ARENA_RADIUS * 0.85);
+    const x = Math.cos(a) * d, y = Math.sin(a) * d;
+    const clear = world ? nearestCoilDistance(world, x, y) : Infinity;
+    if (clear > bestClear) {
+      bestClear = clear;
+      best = { x, y, angle: a + Math.PI + range(-0.6, 0.6) };
+    }
+    if (clear >= SPAWN_CLEARANCE) break;
+  }
+  return best;
+}
+
+/** (x,y) 에서 가장 가까운 코일 세그먼트까지의 거리 */
+function nearestCoilDistance(world, x, y) {
+  let best = Infinity;
+  for (const c of world.coils) {
+    if (!c.alive) continue;
+    // 머리는 반드시 보고, 몸통은 성기게 훑는다 (정확도보다 속도)
+    const dh = Math.hypot(c.x - x, c.y - y);
+    if (dh < best) best = dh;
+    const n = bodyCount(c);
+    for (let i = 6; i < n; i += 12) {
+      const d = Math.hypot(segX(c, i) - x, segY(c, i) - y);
+      if (d < best) best = d;
+    }
+  }
+  return best;
 }
