@@ -87,9 +87,19 @@ function drawLeaderboard(ctx, world, W) {
 }
 
 function drawMinimap(ctx, world, W, H) {
-  const r = IS_TOUCH ? 52 : 62;
-  const cx = W - r - 20;
-  const cy = H - r - 20;
+  /*
+   * 터치에서는 우하단이 가속 버튼 자리다.
+   *
+   * 예전에는 둘 다 우하단 모서리에 붙어 있었다 — 중심 거리 45px 에 반지름 합 114px,
+   * 즉 미니맵이 버튼 안에 거의 통째로 들어가 있었다. 미니맵을 조금 줄여 버튼 **위**로
+   * 올린다. 버튼은 엄지가 닿는 자리라 움직이면 안 되고, 미니맵은 눈으로만 보는 것이라
+   * 어디든 갈 수 있다.
+   */
+  const r = IS_TOUCH ? 44 : 62;
+  const cx = IS_TOUCH ? W - r - 22 : W - r - 20;
+  const cy = IS_TOUCH
+    ? TOUCH_UI.boostY - TOUCH_UI.boostR - 12 - r
+    : H - r - 20;
   const scale = r / ARENA_RADIUS;
 
   ctx.save();
