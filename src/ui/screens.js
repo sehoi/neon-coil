@@ -38,7 +38,8 @@ export function renderTitle(ctx, save) {
       W / 2, H - 52, { size: 14, align: 'center', color: C.dim });
   }
   text(ctx, IS_TOUCH ? '왼쪽 드래그로 조종 · 오른쪽 아래 가속'
-                     : '마우스로 조종 · 클릭 또는 Space 로 가속',
+       : SETTINGS.control === 'key' ? 'WASD / 방향키로 조종 · Space 로 가속'
+       : '마우스로 조종 · 클릭 또는 Space 로 가속',
     W / 2, H - 28, { size: 13, align: 'center', color: '#4a5578' });
   return r;
 }
@@ -89,7 +90,8 @@ export function renderBoard(ctx, save, highlightRank = 0) {
 export function renderHelp(ctx) {
   const W = cfg.W, H = cfg.H;
   dim(ctx, 0.85);
-  const pw = 660, ph = 400;
+  // 키보드 설명이 마우스보다 길어 폭을 조금 넓혔다 (글꼴에 따라 넘칠 여지를 없앤다)
+  const pw = 700, ph = 400;
   const px = (W - pw) / 2, py = (H - ph) / 2;
   panel(ctx, px, py, pw, ph);
 
@@ -99,6 +101,11 @@ export function renderHelp(ctx) {
     ['화면 왼쪽 드래그', '누른 자리 기준으로 방향을 민다'],
     ['오른쪽 아래 원', '가속 — 길이를 태워 빨라진다'],
     ['상단 중앙 ▮▮', '일시정지'],
+  ] : SETTINGS.control === 'key' ? [
+    ['WASD / 방향키', '누른 방향으로 머리가 돈다 · 두 개면 대각선'],
+    ['Space / Shift', '가속 — 길이를 태워 빨라진다'],
+    ['Esc / P', '일시정지'],
+    ['M / G', '음소거 / 글로우 전환'],
   ] : [
     ['마우스 이동', '머리가 포인터 쪽을 향한다'],
     ['클릭 / Space / Shift', '가속 — 길이를 태워 빨라진다'],
@@ -129,7 +136,8 @@ export function renderHelp(ctx) {
 export function renderPause(ctx, world) {
   const W = cfg.W, H = cfg.H;
   dim(ctx, 0.8);
-  const pw = 560, ph = 340;
+  // 데스크톱에는 조작 방식 전환이 한 줄 더 붙는다
+  const pw = 560, ph = IS_TOUCH ? 340 : 390;
   const px = (W - pw) / 2, py = (H - ph) / 2;
   panel(ctx, px, py, pw, ph);
 
@@ -143,6 +151,11 @@ export function renderPause(ctx, world) {
     mute: button(ctx, px + 50 + colW, py + 130, colW - 10, 40, `사운드: ${SETTINGS.muted ? 'OFF' : 'ON'}`, { color: C.dim, size: 15 }),
     fps:  button(ctx, px + 40, py + 180, pw - 80, 40, `FPS 표시: ${SETTINGS.showFps ? 'ON' : 'OFF'}`, { color: C.dim, size: 15 }),
   };
+  if (!IS_TOUCH) {
+    r.control = button(ctx, px + 40, py + 230, pw - 80, 40,
+      `조작: ${SETTINGS.control === 'key' ? '키보드 (WASD / 방향키)' : '마우스'}`,
+      { color: C.gold, size: 15 });
+  }
   r.quit   = button(ctx, px + 40, py + ph - 62, 190, 44, '포기', { color: C.red, size: 18 });
   r.resume = button(ctx, px + pw - 230, py + ph - 62, 190, 44, '계속', { size: 18 });
   return r;

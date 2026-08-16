@@ -225,6 +225,10 @@ function render() {
       if (r.glow) { SETTINGS.glow = !SETTINGS.glow; persist(); }
       if (r.mute) { SETTINGS.muted = !SETTINGS.muted; setMuted(SETTINGS.muted); persist(); }
       if (r.fps) { SETTINGS.showFps = !SETTINGS.showFps; persist(); }
+      if (r.control) {
+        SETTINGS.control = SETTINGS.control === 'key' ? 'mouse' : 'key';
+        persist();
+      }
       break;
     }
 

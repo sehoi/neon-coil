@@ -1,14 +1,14 @@
 // 키보드 + 터치를 하나의 정규화된 입력으로 합친다.
 
-import { W, H, TOUCH_UI } from '../config.js';
+import { W, H, TOUCH_UI, SETTINGS } from '../config.js';
 
 const keys = new Set();
 
 export const input = {
   /**
    * 조종 방향. NEON COIL 은 8방향 이동이 아니라 "머리가 향할 방향"을 받는다.
-   * 데스크톱은 마우스 포인터 방향, 터치는 조이스틱을 민 방향.
-   * 입력이 없으면 null — 그때는 코일이 가던 방향을 유지한다.
+   * 데스크톱은 키보드(또는 설정에 따라 마우스 포인터), 터치는 조이스틱을 민 방향.
+   * 입력이 없으면 hasAim=false — 그때는 코일이 가던 방향을 유지한다.
    */
   aimX: 0, aimY: 0, hasAim: false,
 
@@ -137,11 +137,13 @@ export function initInput(cv, blurHandler) {
       return;   // 우측 빈 공간 탭은 무시
     }
 
-    // 데스크톱 조종 중의 클릭은 부스트다 — UI 탭으로 흘리지 않는다
+    // 데스크톱 조종 중의 클릭은 UI 탭으로 흘리지 않는다.
+    // 마우스 조종일 때만 부스트다 — 키보드 조종에서는 잘못 누른 클릭이
+    // 길이를 태우면 안 되므로 아무 일도 일으키지 않는다.
     if (input.gameplay) {
       input.pointer.x = p.x;
       input.pointer.y = p.y;
-      mouseBoost = true;
+      if (SETTINGS.control === 'mouse') mouseBoost = true;
       return;
     }
 
@@ -211,8 +213,14 @@ function held(list) {
 
 /**
  * 매 프레임 update 앞에서 호출.
- * 조종 방향을 하나로 합친다 — 터치는 조이스틱, 데스크톱은 마우스 포인터(또는 키보드).
+ * 조종 방향을 하나로 합친다 — 터치는 조이스틱, 데스크톱은 키보드(또는 마우스).
  * 화면 좌표를 넘겨받아야 마우스 방향을 계산할 수 있다.
+ *
+ * ── 왜 키보드와 마우스를 섞지 않는가 ──
+ * 예전에는 "키가 눌려 있으면 키, 아니면 마우스"였다. 그런데 마우스 조종은
+ * 포인터가 화면 어디에 있든 **항상** 방향을 지시한다. 그래서 키를 떼는 순간
+ * 조종권이 포인터로 넘어가 코일이 제멋대로 꺾였다 — 키보드로 하려 해도
+ * 할 수가 없었다. 둘은 공존할 수 없어서 설정으로 하나만 쓴다.
  */
 export function pollInput(screenCenterX, screenCenterY) {
   let x = 0, y = 0, has = false;
@@ -223,14 +231,18 @@ export function pollInput(screenCenterX, screenCenterY) {
     const len = Math.hypot(dx, dy);
     if (len > 10) { x = dx / len; y = dy / len; has = true; }
   } else if (held(LEFT) || held(RIGHT) || held(UP) || held(DOWN)) {
+    // 키보드: 누른 방향이 곧 머리가 향할 방향. 두 개를 같이 누르면 대각선.
+    // 반대 방향을 동시에 누르면 상쇄돼 has=false — 그때는 가던 방향을 유지한다.
     if (held(LEFT))  x -= 1;
     if (held(RIGHT)) x += 1;
     if (held(UP))    y -= 1;
     if (held(DOWN))  y += 1;
     const len = Math.hypot(x, y);
     if (len > 0) { x /= len; y /= len; has = true; }
-  } else if (!IS_TOUCH_DEVICE) {
-    // 마우스: 화면 중앙(= 플레이어 머리)에서 포인터로 향하는 방향
+  } else if (!IS_TOUCH_DEVICE && SETTINGS.control === 'mouse') {
+    // 마우스: 화면 중앙(= 플레이어 머리)에서 포인터로 향하는 방향.
+    // 키보드 조종일 때는 이 자리에서 아무 방향도 주지 않는다 — 그래야
+    // 키를 뗀 순간 포인터가 조종권을 가져가지 않는다.
     const dx = input.pointer.x - screenCenterX;
     const dy = input.pointer.y - screenCenterY;
     const len = Math.hypot(dx, dy);

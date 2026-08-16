@@ -10,7 +10,7 @@ const DEFAULT = {
   best: { len: 0, rank: 99, kills: 0, time: 0 },
   /** 로컬 기록 — 상위 8개. { len, rank, kills, time, date } */
   board: [],
-  settings: { glow: true, muted: false, shake: 1.0, showFps: false },
+  settings: { glow: true, muted: false, shake: 1.0, showFps: false, control: 'key' },
 };
 
 export const BOARD_SIZE = 8;
@@ -38,6 +38,7 @@ export function loadSave() {
   SETTINGS.muted = data.settings.muted;
   SETTINGS.shake = data.settings.shake;
   SETTINGS.showFps = data.settings.showFps;
+  SETTINGS.control = data.settings.control === 'mouse' ? 'mouse' : 'key';
   return data;
 }
 
@@ -63,6 +64,7 @@ export function persist() {
     data.settings.muted = SETTINGS.muted;
     data.settings.shake = SETTINGS.shake;
     data.settings.showFps = SETTINGS.showFps;
+    data.settings.control = SETTINGS.control;
     localStorage.setItem(KEY, JSON.stringify(data));
   } catch {
     // 시크릿 모드 등에서 실패할 수 있다. 진행에는 영향 없음.
