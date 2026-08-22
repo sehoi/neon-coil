@@ -108,12 +108,14 @@ function requestFullscreenIfMobile() {
 function endRun() {
   const b = save.best;
   const rank = world.finalRank || world.playerRank;   // 죽는 순간의 순위
+  const score = world.player.score;
+  if (score > b.score) b.score = score;
   if (world.bestLen > b.len) b.len = Math.floor(world.bestLen);
   if (rank < b.rank) b.rank = rank;
   if (world.player.kills > b.kills) b.kills = world.player.kills;
   if (world.t > b.time) b.time = Math.floor(world.t);
 
-  recordRank = submitRecord(world.bestLen, rank, world.player.kills, world.t);
+  recordRank = submitRecord(score, world.bestLen, rank, world.player.kills, world.t);
   persist();
   stopMusic();
   state = S.RESULT;

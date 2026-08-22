@@ -7,6 +7,15 @@ export function createGrid(cell) {
   /** @type {Map<number, object[]>} */
   const map = new Map();
 
+  /**
+   * 이번 프레임에 실제로 뭔가 들어간 버킷만 모아둔다.
+   *
+   * map.values() 를 전부 도는 clear 는 "한 번이라도 지나간 셀"에 비례한다.
+   * 아레나가 5200×5200 이라 몇 분만 놀아도 버킷이 만 개를 넘고, 그 대부분이
+   * 빈 채로 매 프레임 순회됐다 (실측: 업데이트 시간의 약 23%).
+   */
+  const used = [];
+
   function key(cx, cy) {
     return (cx + OFFSET) * 65536 + (cy + OFFSET);
   }
@@ -14,7 +23,8 @@ export function createGrid(cell) {
   return {
     clear() {
       // Map 자체를 버리면 GC 부담이 커지므로 버킷 배열을 재사용한다.
-      for (const bucket of map.values()) bucket.length = 0;
+      for (let i = 0; i < used.length; i++) used[i].length = 0;
+      used.length = 0;
     },
 
     insert(o) {
@@ -23,6 +33,7 @@ export function createGrid(cell) {
       const k = key(cx, cy);
       let bucket = map.get(k);
       if (!bucket) { bucket = []; map.set(k, bucket); }
+      if (bucket.length === 0) used.push(bucket);
       bucket.push(o);
     },
 

@@ -66,7 +66,7 @@ export function headHitsBody(world, c) {
 }
 
 /**
- * 머리끼리의 정면충돌. 코일 수가 20 남짓이라 전수 비교(190쌍)가 그리드보다 싸다.
+ * 머리끼리의 정면충돌. 코일 수가 15 남짓이라 전수 비교(105쌍)가 그리드보다 싸다.
  * 짧은 쪽이 죽고, 같으면 둘 다 죽는다.
  */
 export function resolveHeadCollisions(world, onDeath) {

@@ -79,9 +79,23 @@ const RIGHT = ['KeyD', 'ArrowRight'];
 const UP    = ['KeyW', 'ArrowUp'];
 const DOWN  = ['KeyS', 'ArrowDown'];
 
+const PREVENT_KEYS = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+
 function inCircle(p, cx, cy, r) {
   const dx = p.x - cx, dy = p.y - cy;
   return dx * dx + dy * dy <= r * r;
+}
+
+/** 눌린 것으로 알고 있는 모든 입력을 놓는다. 포커스가 흔들릴 때 호출. */
+function releaseAll() {
+  keys.clear();
+  touchStick = null;
+  boostTouchId = null;
+  mouseBoost = false;
+  tappedDown.clear();
+  activePointers.clear();
+  ignoreUntilUp.clear();
+  if (onBlur) onBlur();
 }
 
 export function initInput(cv, blurHandler) {
@@ -90,11 +104,21 @@ export function initInput(cv, blurHandler) {
 
   addEventListener('keydown', e => {
     // 게임이 쓰는 키만 기본 동작을 막는다 (F5, DevTools 등은 살려둔다)
-    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
-      e.preventDefault();
-    }
-    if (e.repeat) return;
+    if (PREVENT_KEYS.has(e.code)) e.preventDefault();
+
+    /*
+     * repeat 이벤트에서도 반드시 keys 에 다시 넣는다.
+     *
+     * 예전에는 `if (e.repeat) return;` 이 맨 앞에 있었다. 그런데 blur 는 keys 를
+     * 통째로 비운다 — 방향키를 **누른 채로** 창 포커스가 흔들리면(알림·전체화면 전환·
+     * 다른 창 클릭 후 복귀) 브라우저는 그 뒤로 repeat=true 인 keydown 만 보내므로
+     * 그 키는 손을 뗐다 다시 누르기 전까지 영영 죽은 키가 됐다.
+     * "아이템 먹고 나서 방향키가 안 먹는다"의 정체가 이것이다 — 실제로는 아이템과
+     * 무관하고, 그 사이에 포커스가 한 번 튄 것이다.
+     * 이제는 repeat 한 번(≈30ms)이면 스스로 복구된다.
+     */
     keys.add(e.code);
+    if (e.repeat) return;
     input.pressed.add(e.code);
     input.anyKey = true;
   });
@@ -102,16 +126,10 @@ export function initInput(cv, blurHandler) {
   addEventListener('keyup', e => keys.delete(e.code));
 
   // 포커스를 잃으면 키가 눌린 채로 남는다 → 전부 해제하고 일시정지
-  addEventListener('blur', () => {
-    keys.clear();
-    touchStick = null;
-    boostTouchId = null;
-    mouseBoost = false;
-    tappedDown.clear();
-    activePointers.clear();
-    ignoreUntilUp.clear();
-    if (onBlur) onBlur();
-  });
+  addEventListener('blur', releaseAll);
+
+  // 탭을 감추거나 화면이 꺼져도 keyup 이 오지 않는다. 여기서도 손을 털어준다.
+  addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });
 
   cv.addEventListener('pointerdown', e => {
     const p = toCanvas(e);
@@ -225,6 +243,10 @@ function held(list) {
 export function pollInput(screenCenterX, screenCenterY) {
   let x = 0, y = 0, has = false;
 
+  // 스틱을 쥔 손가락이 화면에서 사라졌는데 pointerup 을 못 받은 경우(포인터 캡처가
+  // 걸린 채 제스처로 취소되는 기기가 있다) 스틱이 영원히 남아 조종을 가로챈다.
+  if (touchStick && !activePointers.has(touchStick.id)) touchStick = null;
+
   if (touchStick) {
     const dx = touchStick.x - touchStick.ox;
     const dy = touchStick.y - touchStick.oy;
@@ -276,8 +298,15 @@ export function endFrameInput() {
   }
 }
 
+/**
+ * 이번 프레임에 새로 눌렸는가. **읽는 순간 소비된다.**
+ *
+ * update() 는 프레임당 최대 5회 돌 수 있다. 소비하지 않으면 한 번 누른 Esc 가
+ * 첫 스텝에서 일시정지 → 둘째 스텝에서 해제로 되돌려져, 프레임이 길어질수록
+ * 일시정지·음소거·재시작 키가 제멋대로 먹히지 않았다.
+ */
 export function keyPressed(code) {
-  return input.pressed.has(code);
+  return input.pressed.delete(code);
 }
 
 export function getTouchStick() {

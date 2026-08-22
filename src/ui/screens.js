@@ -33,8 +33,8 @@ export function renderTitle(ctx, save) {
       document.fullscreenElement ? '전체화면 해제' : '전체화면', { color: C.dim, size: 16 });
   }
 
-  if (save.best.len > 0) {
-    text(ctx, `최고 길이 ${save.best.len} · 최고 순위 ${save.best.rank}위 · 최다 처치 ${save.best.kills}`,
+  if (save.best.score > 0 || save.best.len > 0) {
+    text(ctx, `최고 점수 ${save.best.score} · 최고 길이 ${save.best.len} · 최고 순위 ${save.best.rank}위 · 최다 처치 ${save.best.kills}`,
       W / 2, H - 52, { size: 14, align: 'center', color: C.dim });
   }
   text(ctx, IS_TOUCH ? '왼쪽 드래그로 조종 · 오른쪽 아래 가속'
@@ -44,7 +44,7 @@ export function renderTitle(ctx, save) {
   return r;
 }
 
-/** 로컬 기록 — 길이 기준 상위 8개 */
+/** 로컬 기록 — 점수 기준 상위 8개 (동점은 처치·순위·길이·생존 순으로 가른다) */
 export function renderBoard(ctx, save, highlightRank = 0) {
   const W = cfg.W, H = cfg.H;
   dim(ctx, 0.88);
@@ -60,7 +60,8 @@ export function renderBoard(ctx, save, highlightRank = 0) {
     });
   } else {
     text(ctx, '순위', px + 44, py + 84, { size: 12, color: C.dim });
-    text(ctx, '길이', px + 130, py + 84, { size: 12, color: C.dim });
+    text(ctx, '점수', px + 110, py + 84, { size: 12, color: C.dim });
+    text(ctx, '길이', px + 240, py + 84, { size: 12, color: C.dim });
     text(ctx, '최종 순위', px + pw - 230, py + 84, { size: 12, align: 'right', color: C.dim });
     text(ctx, '처치', px + pw - 130, py + 84, { size: 12, align: 'right', color: C.dim });
     text(ctx, '생존', px + pw - 40, py + 84, { size: 12, align: 'right', color: C.dim });
@@ -77,7 +78,8 @@ export function renderBoard(ctx, save, highlightRank = 0) {
         ctx.restore();
       }
       text(ctx, `${i + 1}`, px + 50, y, { size: 16, align: 'center', color: col });
-      text(ctx, `${e.len}`, px + 130, y, { size: 18, color: col });
+      text(ctx, `${e.score}`, px + 110, y, { size: 18, color: col });
+      text(ctx, `${e.len}`, px + 240, y, { size: 15, color: me ? C.cyan : C.dim });
       text(ctx, `${e.rank}위`, px + pw - 230, y, { size: 14, align: 'right', color: me ? C.cyan : C.dim });
       text(ctx, `${e.kills}`, px + pw - 130, y, { size: 14, align: 'right', color: me ? C.cyan : C.dim });
       text(ctx, `${e.time}초`, px + pw - 40, y, { size: 14, align: 'right', color: me ? C.cyan : C.dim });
@@ -142,7 +144,7 @@ export function renderPause(ctx, world) {
   panel(ctx, px, py, pw, ph);
 
   text(ctx, '일시정지', px + pw / 2, py + 50, { size: 32, align: 'center', color: C.cyan, glow: 12 });
-  text(ctx, `길이 ${Math.floor(world.player.len)} · ${world.playerRank}위 · 처치 ${world.player.kills}`,
+  text(ctx, `${world.player.score}점 · 길이 ${Math.floor(world.player.len)} · ${world.playerRank}위 · 처치 ${world.player.kills}`,
     px + pw / 2, py + 84, { size: 16, align: 'center', color: C.dim });
 
   const colW = (pw - 80) / 2;
@@ -164,7 +166,7 @@ export function renderPause(ctx, world) {
 export function renderResult(ctx, world, save, recordRank) {
   const W = cfg.W, H = cfg.H;
   dim(ctx, 0.85);
-  const pw = 600, ph = 400;
+  const pw = 600, ph = 430;   // 점수 줄이 하나 늘었다
   const px = (W - pw) / 2, py = (H - ph) / 2;
   // 죽는 순간의 순위를 쓴다. playerRank 는 사후에 꼴찌로 바뀐다.
   const rank = world.finalRank || world.playerRank;
@@ -176,16 +178,20 @@ export function renderResult(ctx, world, save, recordRank) {
   });
 
   const rows = [
-    ['최종 길이', `${Math.floor(world.bestLen)}`],
+    ['점수', `${world.player.score}`],
+    ['최고 길이', `${Math.floor(world.bestLen)}`],
     ['최종 순위', `${rank}위 / ${world.coils.length}`],
     ['처치', `${world.player.kills}`],
     ['생존 시간', `${Math.floor(world.t)}초`],
   ];
-  let y = py + 124;
+  let y = py + 120;
   for (const [k, v] of rows) {
-    text(ctx, k, px + 70, y, { size: 17, color: C.dim });
-    text(ctx, v, px + pw - 70, y, { size: 20, align: 'right', color: C.text });
-    y += 36;
+    const big = k === '점수';
+    text(ctx, k, px + 70, y, { size: big ? 19 : 17, color: big ? C.cyan : C.dim });
+    text(ctx, v, px + pw - 70, y, {
+      size: big ? 30 : 20, align: 'right', color: big ? C.cyan : C.text, glow: big ? 10 : 0,
+    });
+    y += big ? 40 : 34;
   }
 
   if (recordRank) {

@@ -2,7 +2,7 @@
 //
 // 핵심 결정 — 세그먼트가 앞을 따라가는 스프링 방식이 아니라,
 // **머리 궤적을 기록하고 그 점들이 곧 몸통**이다. 머리 하나만 움직이면 되므로
-// 길이 400짜리 20기라도 프레임당 이동 계산은 20회다.
+// 길이 400짜리 15기라도 프레임당 이동 계산은 15회다.
 
 import { COIL, turnRateFor, radiusFor, ARENA_RADIUS } from '../data/tuning.js';
 import { wrapAngle, TAU } from '../core/vec.js';
@@ -41,6 +41,8 @@ export function createCoil() {
     isPlayer: false,
     color: C.cyan,
     name: '',
+    // 누적 점수. 길이와 달리 상한이 없고, 부스트로 길이를 태워도 줄지 않는다.
+    score: 0,
     kills: 0,
     aiTimer: 0,
     ai: null,
@@ -65,6 +67,7 @@ export function spawnCoil(c, x, y, angle, isPlayer, index) {
   c.shieldT = 0; c.surgeT = 0; c.magnetT = 0;
   c.godMode = false;   // 재시작하면 테스트 플래그가 남지 않게 한다
   c.isPlayer = isPlayer;
+  c.score = 0;
   c.kills = 0;
   c.aiTimer = 0;
   c.respawnIn = 0;

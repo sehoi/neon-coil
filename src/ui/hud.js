@@ -13,15 +13,17 @@ export function renderHud(ctx, world) {
   const W = cfg.W, H = cfg.H;
   const p = world.player;
 
-  // ── 좌상단: 길이 · 순위 (상단 끝에 붙이면 노치에 잘린다) ──
+  // ── 좌상단: 점수 · 길이 · 순위 (상단 끝에 붙이면 노치에 잘린다) ──
+  // 큰 숫자는 점수다. 길이는 600 에서 멈추지만 점수는 계속 오른다.
   const top = IS_TOUCH ? 60 : 46;
-  text(ctx, `${Math.floor(p.targetLen)}`, 20, top, { size: 38, color: C.cyan, glow: 10 });
-  text(ctx, '길이', 20, top + 20, { size: 13, color: C.dim });
-  text(ctx, `${world.playerRank}위 / ${world.coils.length}`, 96, top + 20, {
-    size: 14, color: C.text,
+  text(ctx, `${p.score}`, 20, top, { size: 38, color: C.cyan, glow: 10 });
+  text(ctx, '점수', 20, top + 20, { size: 13, color: C.dim });
+  text(ctx, `길이 ${Math.floor(p.targetLen)}`, 76, top + 20, { size: 13, color: C.text });
+  text(ctx, `${world.playerRank}위/${world.coils.length}`, 172, top + 20, {
+    size: 13, color: C.text,
   });
   if (p.kills > 0) {
-    text(ctx, `처치 ${p.kills}`, 190, top + 20, { size: 13, color: C.gold });
+    text(ctx, `처치 ${p.kills}`, 252, top + 20, { size: 13, color: C.gold });
   }
 
   drawBoostStatus(ctx, p, top + 44);
@@ -79,7 +81,7 @@ function drawLeaderboard(ctx, world, W) {
     text(ctx, c.name, right - 138, y, {
       size: 14, color: me ? C.cyan : C.text, alpha: me ? 1 : 0.9,
     });
-    text(ctx, `${Math.floor(c.len)}`, right, y, {
+    text(ctx, `${c.score}`, right, y, {
       size: 14, align: 'right', color: me ? C.cyan : C.dim,
     });
     y += 20;

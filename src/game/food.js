@@ -58,9 +58,7 @@ export function scatterFood(pool, n) {
 export function dropBoostItem(pool, c) {
   if (c.targetLen < BOOST_ITEM.minLenToDrop) return null;
   const kind = pick(BOOST_KINDS);
-  const f = spawnFood(pool, c.x, c.y, kind);
-  f.vx = 0; f.vy = 0;
-  return f;
+  return spawnFood(pool, c.x, c.y, kind);
 }
 
 /** 코일이 죽으면 몸 길이에 비례한 잔해를 뿌린다. */
@@ -78,14 +76,12 @@ export function scatterDebris(pool, c) {
 
 // ── 흡인 · 흡수 ─────────────────────────────────────────────
 // 콜백은 모듈 스코프 고정 (프레임당 클로저 생성 금지)
-let _eatCoil = null, _eatWorld = null;
+let _eatCoil = null, _eatWorld = null, _eatReach = 0;
 
 function _eatCb(f) {
   if (!f.alive) return;
   const c = _eatCoil;
-  // 자석 효과 중에는 훨씬 멀리서도 끌어온다
-  const magnet = c.magnetT > 0 ? BOOST_ITEM.magnetRadius : COIL.magnet;
-  const reach = c.radius + magnet;
+  const reach = _eatReach;
   const d2 = dist2(c.x, c.y, f.x, f.y);
   if (d2 > reach * reach) return;
 
@@ -93,7 +89,11 @@ function _eatCb(f) {
   if (d2 <= swallow * swallow) {
     f.alive = false;
     if (KIND_STYLE[f.kind].boost) _eatWorld.applyBoost(c, f.kind);
-    else addLength(c, f.value);
+    else {
+      addLength(c, f.value);
+      // 길이는 상한에 막혀도 점수는 계속 쌓인다
+      c.score += f.value;
+    }
     if (c.isPlayer) _eatWorld.onPlayerEat(f);
     return;
   }
@@ -103,23 +103,35 @@ function _eatCb(f) {
 export function eatNearby(world, c) {
   _eatCoil = c;
   _eatWorld = world;
-  world.foodGrid.query(c.x, c.y, c.radius + COIL.magnet, _eatCb);
+  // 자석 효과 중에는 훨씬 멀리서도 끌어온다.
+  // 조회 반경과 판정 반경은 **같아야 한다** — 예전에는 조회를 항상 COIL.magnet(40)
+  // 으로 해놓고 판정만 320 을 봤다. 그래서 흡인 아이템이 사실상 아무 일도 안 했다.
+  _eatReach = c.radius + (c.magnetT > 0 ? BOOST_ITEM.magnetRadius : COIL.magnet);
+  world.foodGrid.query(c.x, c.y, _eatReach, _eatCb);
 }
 
-export function updateFood(world, dt) {
-  world.food.forEach(f => {
-    f.age += dt;
-    // 강화 아이템은 방치되면 사라진다 — 맵에 영원히 쌓이지 않게
-    if (KIND_STYLE[f.kind].boost && f.age > BOOST_ITEM.lifetime) { f.alive = false; return; }
-    if (f.pull && f.pull.alive) {
+// 프레임당 클로저 생성 금지 — 먹이는 1000개 단위라 콜백도 고정해 둔다
+let _dt = 0;
+
+function _updateFoodCb(f) {
+  f.age += _dt;
+  // 강화 아이템은 방치되면 사라진다 — 맵에 영원히 쌓이지 않게
+  if (KIND_STYLE[f.kind].boost && f.age > BOOST_ITEM.lifetime) { f.alive = false; return; }
+  if (f.pull) {
+    if (f.pull.alive) {
       const dx = f.pull.x - f.x, dy = f.pull.y - f.y;
       const d = Math.hypot(dx, dy) || 1;
       const speed = 260 + (1 - Math.min(d / 200, 1)) * 420;
-      f.x += (dx / d) * speed * dt;
-      f.y += (dy / d) * speed * dt;
+      f.x += (dx / d) * speed * _dt;
+      f.y += (dy / d) * speed * _dt;
     }
     f.pull = null;   // 매 프레임 다시 판정한다
-  });
+  }
+}
+
+export function updateFood(world, dt) {
+  _dt = dt;
+  world.food.forEach(_updateFoodCb);
   world.food.compact();
 
   // 개수 유지 — 화면 밖에서만 보충해 눈앞에 튀어나오지 않게 한다
@@ -138,7 +150,11 @@ export function updateFood(world, dt) {
 }
 
 /** 먹이 전용 그리드 재구축 */
+let _fgrid = null;
+const _insertCb = f => _fgrid.insert(f);
+
 export function buildFoodGrid(world) {
-  world.foodGrid.clear();
-  world.food.forEach(f => world.foodGrid.insert(f));
+  _fgrid = world.foodGrid;
+  _fgrid.clear();
+  world.food.forEach(_insertCb);
 }

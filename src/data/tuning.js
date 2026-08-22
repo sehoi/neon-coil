@@ -42,7 +42,9 @@ export function radiusFor(len) {
 }
 
 export const FOOD = {
-  target: 1400,       // 아레나에 유지할 개수
+  // 아레나에 유지할 개수. 코일이 20→15 기로 줄어 소비도 줄었으므로 함께 낮춘다.
+  // 먹이 하나하나가 매 프레임 갱신·그리드 등록·그리기 대상이라 개수가 곧 비용이다.
+  target: 1150,
   bitValue: 1,
   blockValue: 4,
   debrisValue: 6,
@@ -66,8 +68,23 @@ export const BOOST_ITEM = {
   lifetime: 22,          // 이 시간이 지나면 사라진다
 };
 
+/**
+ * 점수.
+ *
+ * 길이는 궤적 버퍼 크기(COIL.maxLen)에 막혀 600 에서 더 늘지 않는다 — 그건
+ * 성능을 지키기 위한 하드 상한이지 실력의 상한이 아니다. 그래서 **점수를
+ * 길이에서 떼어냈다**: 먹은 총량과 처치가 그대로 쌓이므로 만렙 이후에도
+ * 계속 오르고, 부스트로 길이를 태워도 이미 번 점수는 사라지지 않는다.
+ */
+export const SCORE = {
+  killBase: 30,        // 처치 1회 기본 점수
+  killPerLen: 0.25,    // + 상대 길이 × 이 값 (큰 놈을 잡을수록 크게)
+};
+
 export const NPC = {
-  count: 19,
+  // 지렁이 총 15기 = 플레이어 1 + NPC 14.
+  // 20기일 때 후반 프레임이 무너졌다 — 몸통 세그먼트·충돌·렌더가 전부 기수에 비례한다.
+  count: 14,
   respawnMin: 3,
   respawnMax: 6,
   aiIntervalFrames: 6,   // AI 는 6프레임에 한 번만 판단한다

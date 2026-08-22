@@ -4,7 +4,7 @@ import { GRID_CELL, C } from '../config.js';
 import { createGrid } from '../core/grid.js';
 import { rnd, range, irange } from '../core/rng.js';
 import { sfx } from '../core/audio.js';
-import { ARENA_RADIUS, NPC, COIL } from '../data/tuning.js';
+import { ARENA_RADIUS, NPC, COIL, SCORE } from '../data/tuning.js';
 
 import { createCoil, spawnCoil, updateCoil, outOfBounds, randomSpawnPoint, bodyCount, segX, segY } from './coil.js';
 import { makeAI, steerAI } from './ai.js';
@@ -103,7 +103,11 @@ function killCoil(world, c, killer) {
   scatterDebris(world.food, c);
   dropBoostItem(world.food, c);   // 큰 코일이었다면 강화 아이템을 남긴다
   burst(c.x, c.y, c.color, c.isPlayer ? 34 : 14, 260, 5);
-  if (killer && killer !== c) killer.kills++;
+  if (killer && killer !== c) {
+    killer.kills++;
+    // 큰 놈을 잡을수록 크게 — 위험을 감수한 값을 점수로 돌려준다
+    killer.score += Math.round(SCORE.killBase + c.targetLen * SCORE.killPerLen);
+  }
 
   if (c.isPlayer) {
     // 죽는 순간의 순위를 붙잡는다. 리더보드는 살아 있는 코일만 세므로,
@@ -192,7 +196,9 @@ const _rank = [];
 function updateLeaderboard(world) {
   _rank.length = 0;
   for (const c of world.coils) if (c.alive) _rank.push(c);
-  _rank.sort((a, b) => b.len - a.len);
+  // 길이가 아니라 점수로 줄을 세운다 — 길이는 600 에서 전원이 동률이 되어
+  // 만렙 이후 순위가 굳어버린다. 동점이면 더 긴 쪽이 위.
+  _rank.sort((a, b) => (b.score - a.score) || (b.len - a.len));
 
   world.leaders.length = 0;
   for (let i = 0; i < Math.min(5, _rank.length); i++) world.leaders.push(_rank[i]);

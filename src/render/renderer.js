@@ -1,8 +1,8 @@
 // 월드 렌더링.
 //
 // 성능의 핵심은 하나다 — **코일 몸통을 폴리라인 한 번의 stroke 로 그린다.**
-// 세그먼트를 원으로 하나씩 그리면 코일 20기 × 400세그먼트 = 8,000 draw call 이다.
-// 폴리라인이면 코일당 2회(외곽 번짐 + 코어), 총 40회로 끝난다.
+// 세그먼트를 원으로 하나씩 그리면 코일 15기 × 400세그먼트 = 6,000 draw call 이다.
+// 폴리라인이면 코일당 2회(외곽 번짐 + 코어), 총 30회로 끝난다.
 //
 // `shadowBlur` 는 쓰지 않는다 — 도형마다 블러 래스터화가 붙어 비용이 폭증한다.
 // (NEON PURGE 실측: 185.9ms → 8.8ms)
@@ -111,8 +111,13 @@ function drawCoil(ctx, c, left, right, top, bottom, isPlayer, isLeader) {
   const n = bodyCount(c);
   if (n < 2) return;
 
-  // LOD — 굵은 선이라 점을 걸러도 표가 안 난다
-  const step = _lowDetail ? 3 : (n > 220 ? 2 : 1);
+  /*
+   * LOD — 점을 걸러도 몸통이 끊기지 않는다.
+   * 폴리라인 stroke 는 점 사이를 선폭 2r 로 이어주므로, 점 간격이 벌어져도
+   * 구멍이 생기는 게 아니라 곡선 모서리만 살짝 잘린다. 세그먼트 간격이 0.55r 이니
+   * step 4 라도 현(弦)이 2.2r — 굵은 네온 선에서는 눈에 띄지 않는다.
+   */
+  const step = _lowDetail ? 4 : (n > 220 ? 2 : 1);
 
   ctx.beginPath();
   let penDown = false;
@@ -131,8 +136,10 @@ function drawCoil(ctx, c, left, right, top, bottom, isPlayer, isLeader) {
 
   const w = c.radius * 2;
 
-  // 1위는 몸 전체에 금빛 외곽을 두른다 — 화면에서 누가 선두인지 바로 읽혀야 한다
-  if (isLeader) {
+  // 1위는 몸 전체에 금빛 외곽을 두른다 — 화면에서 누가 선두인지 바로 읽혀야 한다.
+  // 선폭이 몸통의 2.3배라 화면을 가장 많이 칠하는 stroke 다. 혼잡할 때는 접는다
+  // (머리 위 왕관은 그대로 남으니 선두는 여전히 알아볼 수 있다).
+  if (isLeader && !_lowDetail) {
     ctx.strokeStyle = C.gold;
     ctx.globalAlpha = 0.30 + Math.sin(_pulseT * 4) * 0.12;
     ctx.lineWidth = w * 2.3;
@@ -228,6 +235,12 @@ function drawHead(ctx, c, isPlayer, isLeader) {
 
 const _foodGroups = { bit: [], block: [], debris: [], leak: [], shield: [], surge: [], magnet: [] };
 
+/** 열린 경로에 원 하나를 더한다 (moveTo 로 끊어야 이전 원과 선으로 이어지지 않는다) */
+function addCircle(ctx, x, y, r) {
+  ctx.moveTo(x + r, y);
+  ctx.arc(x, y, r, 0, TAU);
+}
+
 // 강화 아이템 기호 — 먹이(단순한 원)와 한눈에 구분되어야 한다
 const BOOST_SYMBOL = {
   shield: (ctx, x, y, u) => {   // 방패
@@ -265,12 +278,23 @@ const BOOST_SYMBOL = {
   },
 };
 
+// 화면 판정 콜백은 고정 — 먹이가 1000개 단위라 프레임마다 클로저를 만들 이유가 없다
+let _vl = 0, _vr = 0, _vt = 0, _vb = 0;
+
+function _groupCb(f) {
+  if (f.x > _vl && f.x < _vr && f.y > _vt && f.y < _vb) _foodGroups[f.kind].push(f);
+}
+
 function drawFood(ctx, world, left, right, top, bottom) {
   for (const k in _foodGroups) _foodGroups[k].length = 0;
-  world.food.forEach(f => {
-    if (f.x > left && f.x < right && f.y > top && f.y < bottom) _foodGroups[f.kind].push(f);
-  });
+  _vl = left; _vr = right; _vt = top; _vb = bottom;
+  world.food.forEach(_groupCb);
 
+  /*
+   * 같은 색끼리 **경로 하나에 모아 한 번만 fill 한다.**
+   * 예전에는 먹이 하나마다 beginPath+arc+fill 이었다 — 화면에 400개면 fill 400회,
+   * 글로우까지 켜면 800회다. 종류별로 색이 하나뿐이라 묶는 데 아무 손해가 없다.
+   */
   for (const kind in _foodGroups) {
     const list = _foodGroups[kind];
     if (!list.length) continue;
@@ -280,14 +304,18 @@ function drawFood(ctx, world, left, right, top, bottom) {
     if (SETTINGS.glow && !_lowDetail && kind !== 'bit') {
       ctx.globalAlpha = symbol ? 0.3 : 0.2;
       ctx.fillStyle = col;
-      for (const f of list) disc(ctx, f.x, f.y, f.r * (symbol ? 2.6 : 2.2));
+      ctx.beginPath();
+      for (const f of list) addCircle(ctx, f.x, f.y, f.r * (symbol ? 2.6 : 2.2));
+      ctx.fill();
     }
     ctx.globalAlpha = 1;
     ctx.fillStyle = col;
+    ctx.beginPath();
     for (const f of list) {
       const pulse = 1 + Math.sin(f.age * (symbol ? 7 : 5)) * 0.12;
-      disc(ctx, f.x, f.y, f.r * pulse);
+      addCircle(ctx, f.x, f.y, f.r * pulse);
     }
+    ctx.fill();
 
     // 강화 아이템은 안에 기호를 파낸다
     if (symbol) {
@@ -299,21 +327,27 @@ function drawFood(ctx, world, left, right, top, bottom) {
   }
 }
 
+let _pctx = null;
+
+function _particleCb(p) {
+  if (p.x < _vl || p.x > _vr || p.y < _vt || p.y > _vb) return;
+  const ctx = _pctx;
+  const a = p.life / p.maxLife;
+  ctx.globalAlpha = a;
+  ctx.strokeStyle = p.color;
+  if (p.kind === 'shard') {
+    ctx.lineWidth = 2;
+    polygon(ctx, p.x, p.y, p.r, 3, p.rot);
+  } else {
+    ctx.lineWidth = 2 * a;
+    circle(ctx, p.x, p.y, p.r);
+  }
+}
+
 function drawParticles(ctx, left, right, top, bottom) {
-  particles.forEach(p => {
-    if (p.x < left || p.x > right || p.y < top || p.y > bottom) return;
-    const a = p.life / p.maxLife;
-    ctx.globalAlpha = a;
-    if (p.kind === 'shard') {
-      ctx.strokeStyle = p.color;
-      ctx.lineWidth = 2;
-      polygon(ctx, p.x, p.y, p.r, 3, p.rot);
-    } else {
-      ctx.strokeStyle = p.color;
-      ctx.lineWidth = 2 * a;
-      circle(ctx, p.x, p.y, p.r);
-    }
-  });
+  _pctx = ctx;
+  _vl = left; _vr = right; _vt = top; _vb = bottom;
+  particles.forEach(_particleCb);
   ctx.globalAlpha = 1;
 }
 
