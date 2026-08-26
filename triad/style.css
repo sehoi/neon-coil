@@ -1,0 +1,44 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background: #04040a;
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  overscroll-behavior: none;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  /* 세로 모드 노치는 위아래에 온다. 안전 영역을 비켜야 상단 HUD 가 잘리지 않는다. */
+  padding:
+    env(safe-area-inset-top, 0px)
+    env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px)
+    env(safe-area-inset-left, 0px);
+}
+
+/* 논리 해상도 720x1280 을 유지한 채 레터박스 스케일 */
+#game {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: 9 / 16;
+  background: #05060d;
+  cursor: pointer;
+
+  /* touch-action 은 상속되지 않는다. body 에만 걸면 캔버스는 기본값(auto)이라
+     탭이 스크롤/줌 제스처로 해석되어 포인터 이벤트가 취소될 수 있다. */
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}

@@ -1,0 +1,112 @@
+// 상단 정보줄, 트레이, 도구 버튼.
+
+import { W, LAYOUT, SETTINGS, IS_TOUCH } from '../config.js';
+import { TRAY_CAP } from '../data/tuning.js';
+import { text, button, roundRect, fmtTime } from './widgets.js';
+import { BTN, POWERS, powerRects } from './rects.js';
+import { drawIcon, drawGlyph } from './icons.js';
+import { drawSlot } from '../render/tiles.js';
+import { traySlot } from '../render/geom.js';
+
+const POWER_LABEL = { undo: '되돌리기', withdraw: '빼내기', shuffle: '섞기' };
+const POWER_HINT  = { undo: '한 장 취소', withdraw: '3장 꺼내기', shuffle: '무늬 섞기' };
+const POWER_KEY   = { undo: 'Z', withdraw: 'X', shuffle: 'C' };
+const POWER_COLOR = { undo: '#9bb0ff', withdraw: '#ffd166', shuffle: '#46f0d0' };
+
+export function drawHud(ctx, session, best) {
+  // 배경 띠
+  ctx.fillStyle = 'rgba(255,255,255,0.03)';
+  ctx.fillRect(0, 0, W, LAYOUT.hud.h);
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.fillRect(0, LAYOUT.hud.h - 1, W, 1);
+
+  circleButton(ctx, BTN.pause, 'pause', '#e8ecf7');
+  circleButton(ctx, BTN.mute, SETTINGS.muted ? 'muted' : 'sound', SETTINGS.muted ? '#8b93aa' : '#e8ecf7');
+
+  text(ctx, `LEVEL ${session.level}`, W / 2, 48, {
+    size: 32, color: '#ffffff', align: 'center', baseline: 'middle', weight: '700', glow: 12,
+  });
+
+  const stats = [
+    ['점수', String(session.total)],
+    ['남은', String(session.board.remaining)],
+    ['시간', fmtTime(session.time)],
+  ];
+  stats.forEach(([k, v], i) => {
+    const x = 112 + i * 190;
+    text(ctx, k, x, 92, { size: 17, color: 'rgba(200,208,228,0.62)', align: 'center', weight: '500' });
+    text(ctx, v, x, 118, { size: 25, color: '#dfe6f8', align: 'center', weight: '700' });
+  });
+
+  if (session.combo > 1) {
+    text(ctx, `${session.combo} 연속!`, W - 22, 118, {
+      size: 22, color: '#ffd166', align: 'right', weight: '700', glow: 10,
+    });
+  } else if (best && best.score) {
+    text(ctx, `최고 ${best.score}`, W - 24, 118, {
+      size: 18, color: 'rgba(200,208,228,0.45)', align: 'right', weight: '500',
+    });
+  }
+}
+
+function circleButton(ctx, r, glyph, color) {
+  ctx.save();
+  roundRect(ctx, r.x, r.y, r.w, r.h, r.w / 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.07)';
+  ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+  ctx.stroke();
+  drawGlyph(ctx, glyph, r.x + r.w / 2, r.y + r.h / 2, r.w * 0.3, color);
+  ctx.restore();
+}
+
+/** 트레이 — 빈 칸과 경고선. 타일 자체는 renderer 가 애니메이션과 함께 그린다. */
+export function drawTray(ctx, session) {
+  const danger = session.tray.length >= TRAY_CAP - 1;
+  const t = LAYOUT.tray;
+
+  ctx.save();
+  roundRect(ctx, t.x - 12, t.y - 14, t.w + 24, t.h + 28, 20);
+  ctx.fillStyle = danger ? 'rgba(255,77,109,0.10)' : 'rgba(255,255,255,0.035)';
+  ctx.fill();
+  ctx.lineWidth = danger ? 2.4 : 1.4;
+  ctx.strokeStyle = danger ? 'rgba(255,77,109,0.7)' : 'rgba(255,255,255,0.12)';
+  if (danger && SETTINGS.glow) { ctx.shadowColor = '#ff4d6d'; ctx.shadowBlur = 18; }
+  ctx.stroke();
+  ctx.restore();
+
+  for (let i = 0; i < t.slots; i++) drawSlot(ctx, traySlot(i));
+
+  text(ctx, `${session.tray.length} / ${TRAY_CAP}`, t.x + t.w, t.y - 24, {
+    size: 18, color: danger ? '#ff8ea3' : 'rgba(200,208,228,0.5)', align: 'right', weight: '600',
+  });
+  // 한 번 맞춰 본 뒤에는 설명이 필요 없다. 점수 연출과 겹치기만 한다.
+  if (session.stats.matches === 0) {
+    text(ctx, '같은 무늬 3장이면 사라진다', t.x, t.y - 24, {
+      size: 18, color: 'rgba(200,208,228,0.5)', align: 'left', weight: '500',
+    });
+  }
+}
+
+export function drawPowers(ctx, session, hover) {
+  const rects = powerRects();
+  for (const name of POWERS) {
+    const r = rects[name];
+    const n = session.charges[name];
+    const usable = n > 0 && session.state === 'play';
+    button(ctx, r, {
+      label: '', sub: '', accent: POWER_COLOR[name], disabled: !usable,
+      badge: n, active: hover === name,
+    });
+    drawIcon(ctx, name, r.x + r.w / 2, r.y + 44, 22, usable ? POWER_COLOR[name] : '#8b93aa');
+    text(ctx, POWER_LABEL[name], r.x + r.w / 2, r.y + 88, {
+      size: 22, color: usable ? '#f2f5ff' : 'rgba(200,208,228,0.5)', align: 'center', weight: '700',
+    });
+    const hint = POWER_HINT[name] + (IS_TOUCH ? '' : `  [${POWER_KEY[name]}]`);
+    text(ctx, hint, r.x + r.w / 2, r.y + 112, {
+      size: 15, color: 'rgba(200,208,228,0.5)', align: 'center', weight: '500',
+    });
+  }
+  return rects;
+}

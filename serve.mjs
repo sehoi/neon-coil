@@ -19,7 +19,7 @@ createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost');
     let path = decodeURIComponent(url.pathname);
-    if (path === '/') path = '/index.html';
+    if (path.endsWith('/')) path += 'index.html';   // /triad/ 같은 하위 게임
 
     // 디렉터리 탈출 방지
     const target = normalize(join(ROOT, path));
@@ -38,5 +38,6 @@ createServer(async (req, res) => {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('not found');
   }
 }).listen(PORT, () => {
-  console.log(`NEON PURGE  →  http://localhost:${PORT}`);
+  console.log(`NEON COIL  →  http://localhost:${PORT}`);
+  console.log(`NEON TRIAD →  http://localhost:${PORT}/triad/`);
 });

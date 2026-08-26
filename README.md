@@ -7,6 +7,10 @@
 
 ### ▶ [지금 플레이하기](https://sehoi.github.io/neon-coil/)
 
+같은 저장소에 3매치 타일 게임 **[NEON TRIAD](triad/)** 가 함께 있다 — 같은 무늬 3장을 모아 판을 비운다.
+코어 모듈(rng · audio · save · input)을 그대로 쓰고, 규칙도 같다: 빌드 도구 없음, 에셋 없음.
+[▶ 플레이](https://sehoi.github.io/neon-coil/triad/) · [규칙과 구조](triad/README.md)
+
 ## 로컬에서 실행
 
 ```bash
