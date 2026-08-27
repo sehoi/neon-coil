@@ -23,7 +23,7 @@ export function createCamera(rect, { fov = 42 } = {}) {
  * 상자 전체가 화면 사각형에 들어오도록 카메라를 놓는다.
  * @param pitch 수평선에서 내려다보는 각도 (라디안)
  */
-export function frameBox(cam, halfX, halfZ, height, pitch = 1.1) {
+export function frameBox(cam, halfX, halfZ, height, pitch = Math.PI / 2) {
   const rect = cam.rect;
   cam.target = v3(0, height * 0.3, 0);
 
@@ -69,7 +69,10 @@ function place(cam, dist, pitch) {
 
 export function update(cam) {
   const z = norm(sub(cam.eye, cam.target));          // 뒤쪽
-  const x = norm(cross(v3(0, 1, 0), z));
+  // 바로 위에서 내려다보면 z 가 (0,1,0) 이라 cross((0,1,0), z) 가 0 이 된다.
+  // 그때는 월드 -z 를 화면 위쪽으로 삼는다.
+  const up = Math.abs(z.y) > 0.999 ? v3(0, 0, -1) : v3(0, 1, 0);
+  const x = norm(cross(up, z));
   const y = cross(z, x);
   cam.xAxis = x; cam.yAxis = y; cam.zAxis = z;
 

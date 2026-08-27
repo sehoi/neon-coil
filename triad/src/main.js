@@ -56,7 +56,8 @@ function newSession(level, total = 0, runTime = 0) {
 function useSession(session) {
   game.session = session;
   // 더미가 3~3.7 단위까지 솟으므로 그 높이를 담아 잡는다 (안 그러면 꼭대기가 잘린다)
-  frameBox(game.cam, session.pile.halfX, session.pile.halfZ, 2.8, 1.12);
+  // 바로 위에서 내려다본다 (π/2). 비스듬히 보면 앞줄 타일이 뒷줄을 가린다.
+  frameBox(game.cam, session.pile.halfX, session.pile.halfZ, 2.8, Math.PI / 2);
   game.hot = null;
   game.wasPouring = session.pouring;
 }
@@ -347,7 +348,6 @@ window.TR = {
   get session() { return game.session; },
   get pile() { return game.session.pile; },
   start(level = 1) { initAudio(); startRun(level); },
-  /** 지금 화면에서 무늬가 보이는 타일들 — 집을 수 있는 것 전부. */
   /** 무늬가 보이는 타일 (무엇인지 알고 집을 수 있는 것). */
   visible() { return visibleFront(game.session.pile, camAdapter(), (x, y) => screenRay(game.cam, x, y)); },
   /** 눌러서 집을 수 있는 타일 전부 (엎어진 것 포함). */
