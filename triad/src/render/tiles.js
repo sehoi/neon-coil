@@ -3,7 +3,8 @@
 
 import { SETTINGS } from '../config.js';
 import { TILE } from '../data/tuning.js';
-import { SYMBOLS, drawSymbol } from '../data/symbols.js';
+import { SYMBOLS } from '../data/symbols.js';
+import { blitFace, CELL_W, CELL_H } from '../data/faces.js';
 import { roundRect } from '../ui/widgets.js';
 
 export function drawTile(ctx, r, kind, {
@@ -61,14 +62,13 @@ export function drawTile(ctx, r, kind, {
   ctx.strokeStyle = 'rgba(150,140,116,0.45)';
   ctx.stroke();
 
-  // 무늬
-  const cx = r.x + r.w / 2;
-  const cy = r.y + (r.h - thick) / 2;
-  const rad = Math.min(r.w, r.h - thick) * 0.29;
+  // 무늬 — 더미의 3D 패와 같은 얼굴을 파 넣은 칸 안에 비율 그대로 앉힌다
+  const iw = r.w - pad * 2, ih = r.h - thick - pad * 2;
+  const k = Math.min(iw / CELL_W, ih / CELL_H) * 0.94;
+  const fw = CELL_W * k, fh = CELL_H * k;
   ctx.save();
-  if (covered) ctx.globalAlpha = ctx.globalAlpha * 0.82;
-  else if (SETTINGS.glow) { ctx.shadowColor = sym.color; ctx.shadowBlur = 10; }
-  drawSymbol(ctx, kind, cx, cy, rad, covered ? shade(sym.color) : sym.color);
+  if (covered) ctx.globalAlpha = ctx.globalAlpha * 0.72;
+  blitFace(ctx, kind, r.x + pad + (iw - fw) / 2, r.y + pad + (ih - fh) / 2, fw, fh);
   ctx.restore();
 
   if (covered) {
@@ -86,14 +86,6 @@ export function drawTile(ctx, r, kind, {
   }
 
   ctx.restore();
-}
-
-/** 덮인 타일의 무늬는 채도를 죽여 "지금은 못 집는다"를 색으로도 말한다. */
-function shade(hex) {
-  const n = parseInt(hex.slice(1), 16);
-  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-  const y = (r * 0.3 + g * 0.6 + b * 0.1);
-  return `rgb(${Math.round((r + y) / 2.05)}, ${Math.round((g + y) / 2.05)}, ${Math.round((b + y) / 2.05)})`;
 }
 
 /** 빈 트레이 칸. */

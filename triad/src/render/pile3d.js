@@ -4,7 +4,7 @@
 //  "보이는데 안 눌린다"는 일은 생기지 않는다.)
 
 import { SETTINGS } from '../config.js';
-import { SYMBOLS, drawSymbol } from '../data/symbols.js';
+import { blitFace } from '../data/faces.js';
 import { toView, project } from './camera.js';
 
 // 코너 인덱스: bit0 = +x, bit1 = +y, bit2 = +z
@@ -121,7 +121,7 @@ function paintFace(ctx, f, hot) {
       ctx.strokeStyle = `rgba(150,140,116,${0.5 * s})`;
       ctx.stroke();
     }
-    drawFace(ctx, f, hot);
+    drawFace(ctx, f);
   } else if (f.kind === 'back' && area > 260) {
     inset(ctx, px, py, 0.15);
     ctx.fillStyle = rgb(52 * s, 118 * s, 210 * s);
@@ -182,12 +182,13 @@ function quadArea(px, py) {
   return Math.abs(a) / 2;
 }
 
-function drawFace(ctx, f, hot) {
-  const sym = SYMBOLS[f.tile.kind] || SYMBOLS[0];
+function drawFace(ctx, f) {
   ctx.save();
   setQuadTransform(ctx, f);
   // 원근 왜곡은 면 안에서 무시한다. 타일이 작아 눈에 띄지 않는다.
-  drawSymbol(ctx, f.tile.kind, 0.5, 0.5, 0.33, shade(sym.color, hot ? 1 : f.shade));
+  // multiply 로 얹으면 아래 깔린 음영이 그대로 무늬에도 먹는다.
+  ctx.globalCompositeOperation = 'multiply';
+  blitFace(ctx, f.tile.kind, 0.09, 0.09, 0.82, 0.82);
   ctx.restore();
 }
 
@@ -201,11 +202,6 @@ function setQuadTransform(ctx, f) {
 
 function rgb(r, g, b) {
   return `rgb(${r | 0},${g | 0},${b | 0})`;
-}
-
-function shade(hex, k) {
-  const n = parseInt(hex.slice(1), 16);
-  return rgb(((n >> 16) & 255) * k, ((n >> 8) & 255) * k, (n & 255) * k);
 }
 
 /** 타일이 놓인 판 — 바닥과 테두리. */
