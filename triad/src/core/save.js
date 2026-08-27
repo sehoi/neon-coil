@@ -3,13 +3,14 @@
 import { SETTINGS } from '../config.js';
 
 const KEY = 'neontriad.save';
-const VERSION = 1;
+const VERSION = 2;
 export const BOARD_SIZE = 6;
 
 const DEFAULT = {
   v: VERSION,
   best: { level: 0, score: 0 },
   board: [],                          // { level, score, time, date }
+  run: null,                          // 진행 중인 판 (더미 상태까지 통째로)
   settings: { muted: false, glow: true },
 };
 
@@ -21,11 +22,14 @@ export function loadSave() {
   try {
     const raw = localStorage.getItem(KEY);
     const parsed = raw ? JSON.parse(raw) : null;
-    if (parsed && parsed.v === VERSION) {
+    // v1 에는 진행 저장이 없었다. 기록만 넘겨받고 판은 비운 채로 시작한다.
+    if (parsed && (parsed.v === VERSION || parsed.v === 1)) {
       data = Object.assign(clone(DEFAULT), parsed);
+      data.v = VERSION;
       data.best = Object.assign(clone(DEFAULT.best), parsed.best);
       data.settings = Object.assign(clone(DEFAULT.settings), parsed.settings);
       data.board = Array.isArray(parsed.board) ? parsed.board.slice(0, BOARD_SIZE) : [];
+      data.run = parsed.v === VERSION ? (parsed.run || null) : null;
       sortBoard();
     }
   } catch {
@@ -53,6 +57,25 @@ export function submitRun(level, score, time) {
   persist();
   const i = data.board.indexOf(entry);
   return i >= 0 ? i + 1 : 0;
+}
+
+/**
+ * 진행 중인 판을 저장한다. 더미의 타일 위치·자세까지 통째로 넣으므로
+ * 판 한가운데서 나갔다 돌아와도 그 자리에서 이어진다.
+ */
+export function saveRun(run) {
+  data.run = run;
+  persist();
+}
+
+export function loadRun() {
+  return data.run;
+}
+
+export function clearRun() {
+  if (!data.run) return;
+  data.run = null;
+  persist();
 }
 
 /** 아직 기록에 넣지 않고 몇 위가 될지만 본다 (이어하기를 고를 수 있으므로). */

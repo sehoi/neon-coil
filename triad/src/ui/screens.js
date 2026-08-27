@@ -13,7 +13,7 @@ export function dim(ctx, alpha = 0.72) {
   ctx.fillRect(0, 0, W, H);
 }
 
-export function titleScreen(ctx, save, t) {
+export function titleScreen(ctx, save, t, run = null) {
   dim(ctx, 0.82);
 
   // 맞춰지는 세 장을 그대로 보여준다. 규칙 설명 세 줄보다 이게 빠르다.
@@ -44,9 +44,24 @@ export function titleScreen(ctx, save, t) {
   });
 
   if (save.best.level) {
-    text(ctx, `최고 기록  레벨 ${save.best.level}  ·  ${save.best.score}점`, W / 2, 838, {
+    // 이어하기가 있으면 버튼이 한 줄 더 올라오므로 기록 줄도 비켜 준다
+    text(ctx, `최고 기록  레벨 ${save.best.level}  ·  ${save.best.score}점`, W / 2, run ? 790 : 832, {
       size: 21, color: 'rgba(200,208,228,0.62)', align: 'center', weight: '600',
     });
+  }
+
+  // 두던 판이 있으면 그것부터 권한다
+  if (run) {
+    const [resume, start] = stackedButtons(2, { y: 1024, h: 88, gap: 14 });
+    button(ctx, resume, {
+      label: `이어하기 · 레벨 ${run.level}`,
+      sub: run.total ? `${run.total}점에서` : '',
+      accent: '#46f0d0', active: true,
+    });
+    button(ctx, start, { label: '새로 시작', accent: '#9bb0ff' });
+    text(ctx, IS_TOUCH ? '타일을 눌러 집는다' : '클릭으로 집는다 · Z X V C 도구',
+      W / 2, 1090, { size: 16, color: 'rgba(200,208,228,0.4)', align: 'center', weight: '500' });
+    return { resume, start };
   }
 
   const [start] = stackedButtons(1, { y: 992, h: 96 });

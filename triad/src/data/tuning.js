@@ -36,7 +36,7 @@ export function levelSpec(level) {
   return {
     level: L,
     tiles: tiles - (tiles % 3),
-    kinds: clamp(6 + Math.floor(L / 2), 6, 12),
+    kinds: clamp(5 + L, 6, 12),        // 레벨마다 한 종류씩. 종류가 늘수록 트레이가 빨리 찬다
     layers: clamp(1.25 + L * 0.05, 1.25, 2.0),   // 더미를 몇 겹으로 쌓을지 (상자 넓이가 정해진다)
     parTime: 40 + tiles * 1.1,
   };
