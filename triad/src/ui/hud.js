@@ -8,11 +8,10 @@ import { BTN, POWERS, powerRects } from './rects.js';
 import { drawIcon, drawGlyph } from './icons.js';
 import { drawSlot } from '../render/tiles.js';
 import { traySlot } from '../render/geom.js';
+import { ITEM_NAME, ITEM_COLOR } from './shop.js';
 
-const POWER_LABEL = { undo: '되돌리기', withdraw: '빼내기', flip: '뒤집기', shuffle: '섞기' };
-const POWER_HINT  = { undo: '한 장 취소', withdraw: '3장 꺼내기', flip: '무늬 보기', shuffle: '다시 쏟기' };
-const POWER_KEY   = { undo: 'Z', withdraw: 'X', flip: 'V', shuffle: 'C' };
-const POWER_COLOR = { undo: '#9bb0ff', withdraw: '#ffd166', flip: '#ff6bd6', shuffle: '#46f0d0' };
+const POWER_HINT = { undo: '판에 던진다', withdraw: '왼쪽 한 벌', flip: '전부 정렬', shuffle: '다시 쏟기' };
+const POWER_KEY  = { undo: 'Z', withdraw: 'X', flip: 'V', shuffle: 'C' };
 
 export function drawHud(ctx, session, best) {
   // 배경 띠
@@ -95,13 +94,13 @@ export function drawPowers(ctx, session, hover) {
   for (const name of POWERS) {
     const r = rects[name];
     const n = session.charges[name];
-    const usable = n > 0 && session.state === 'play';
+    const usable = n > 0 && session.state === 'play' && !session.pouring;
     button(ctx, r, {
-      label: '', sub: '', accent: POWER_COLOR[name], disabled: !usable,
+      label: '', sub: '', accent: ITEM_COLOR[name], disabled: !usable,
       badge: n, active: hover === name,
     });
-    drawIcon(ctx, name, r.x + r.w / 2, r.y + 42, 20, usable ? POWER_COLOR[name] : '#8b93aa');
-    text(ctx, POWER_LABEL[name], r.x + r.w / 2, r.y + 84, {
+    drawIcon(ctx, name, r.x + r.w / 2, r.y + 42, 20, usable ? ITEM_COLOR[name] : '#8b93aa');
+    text(ctx, ITEM_NAME[name], r.x + r.w / 2, r.y + 84, {
       size: 20, color: usable ? '#f2f5ff' : 'rgba(200,208,228,0.5)', align: 'center', weight: '700',
     });
     const hint = POWER_HINT[name] + (IS_TOUCH ? '' : ` [${POWER_KEY[name]}]`);

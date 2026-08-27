@@ -1,6 +1,6 @@
 // 그리기 도우미 — 둥근 사각형, 버튼, 글자. 상태를 갖지 않는다.
 
-import { SETTINGS } from '../config.js';
+import { W, H, SETTINGS } from '../config.js';
 
 export const FONT = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 
@@ -88,6 +88,12 @@ export function panel(ctx, r, { accent = 'rgba(255,255,255,0.16)' } = {}) {
   ctx.strokeStyle = accent;
   ctx.stroke();
   ctx.restore();
+}
+
+/** 화면 전체를 덮는 반투명 막. 오버레이 화면들이 공통으로 쓴다. */
+export function dim(ctx, alpha = 0.72) {
+  ctx.fillStyle = `rgba(6,8,16,${alpha})`;
+  ctx.fillRect(0, 0, W, H);
 }
 
 export function fmtTime(sec) {

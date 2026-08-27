@@ -1,20 +1,19 @@
 // 오버레이 화면들. 각 함수는 그린 버튼 사각형을 돌려주고, main 이 그걸로 탭을 판정한다.
 // 그리는 좌표와 누르는 좌표가 갈라지지 않게 하려는 것이다.
 
-import { W, H, IS_TOUCH } from '../config.js';
+import { W, IS_TOUCH } from '../config.js';
 import { SCORE } from '../data/tuning.js';
-import { text, button, panel, fmtTime } from './widgets.js';
-import { PANEL, stackedButtons } from './rects.js';
+import { text, button, panel, dim, fmtTime } from './widgets.js';
+import { PANEL, CLEAR_PANEL, stackedButtons } from './rects.js';
 import { TILE } from '../data/tuning.js';
 import { drawTile } from '../render/tiles.js';
-
-export function dim(ctx, alpha = 0.72) {
-  ctx.fillStyle = `rgba(6,8,16,${alpha})`;
-  ctx.fillRect(0, 0, W, H);
-}
+import { freeReady, price } from '../game/wallet.js';
+import { goldTag, ITEM_NAME, ITEM_COLOR } from './shop.js';
+import { drawIcon } from './icons.js';
 
 export function titleScreen(ctx, save, t, run = null) {
   dim(ctx, 0.82);
+  goldTag(ctx, W - 40, 76, save.wallet.gold, 28);
 
   // 맞춰지는 세 장을 그대로 보여준다. 규칙 설명 세 줄보다 이게 빠르다.
   const kind = 4;
@@ -44,33 +43,43 @@ export function titleScreen(ctx, save, t, run = null) {
   });
 
   if (save.best.level) {
-    // 이어하기가 있으면 버튼이 한 줄 더 올라오므로 기록 줄도 비켜 준다
-    text(ctx, `최고 기록  레벨 ${save.best.level}  ·  ${save.best.score}점`, W / 2, run ? 790 : 832, {
+    text(ctx, `최고 기록  레벨 ${save.best.level}  ·  ${save.best.score}점`, W / 2, run ? 786 : 812, {
       size: 21, color: 'rgba(200,208,228,0.62)', align: 'center', weight: '600',
     });
   }
 
+  const free = freeReady(save.wallet);
+  const shopSub = free ? '무료 아이템이 기다린다' : itemLine(save.wallet);
+
   // 두던 판이 있으면 그것부터 권한다
+  const rects = {};
   if (run) {
-    const [resume, start] = stackedButtons(2, { y: 1024, h: 88, gap: 14 });
-    button(ctx, resume, {
+    const [resume, start, shop] = stackedButtons(3, { y: 1096, h: 84, gap: 12 });
+    rects.resume = button(ctx, resume, {
       label: `이어하기 · 레벨 ${run.level}`,
       sub: run.total ? `${run.total}점에서` : '',
       accent: '#46f0d0', active: true,
     });
-    button(ctx, start, { label: '새로 시작', accent: '#9bb0ff' });
-    text(ctx, IS_TOUCH ? '타일을 눌러 집는다' : '클릭으로 집는다 · Z X V C 도구',
-      W / 2, 1090, { size: 16, color: 'rgba(200,208,228,0.4)', align: 'center', weight: '500' });
-    return { resume, start };
+    rects.start = button(ctx, start, { label: '새로 시작', accent: '#9bb0ff' });
+    rects.shop = button(ctx, shop, { label: '상점', sub: shopSub, accent: '#ffd166', active: free });
+  } else {
+    const [start, shop] = stackedButtons(2, { y: 1080, h: 88, gap: 12 });
+    rects.start = button(ctx, start, { label: '시작', accent: '#46f0d0', active: true });
+    rects.shop = button(ctx, shop, { label: '상점', sub: shopSub, accent: '#ffd166', active: free });
   }
 
-  const [start] = stackedButtons(1, { y: 992, h: 96 });
-  button(ctx, start, { label: '시작', accent: '#46f0d0', active: true });
+  text(ctx, IS_TOUCH ? '타일을 눌러 집는다' : '클릭으로 집는다 · Z X V C 도구',
+    W / 2, 1146, { size: 16, color: 'rgba(200,208,228,0.4)', align: 'center', weight: '500' });
+  return rects;
+}
 
-  text(ctx, IS_TOUCH ? '타일을 눌러 집는다' : '클릭으로 집는다 · Z 되돌리기 · X 빼내기 · V 뒤집기 · C 섞기',
-    W / 2, 1064, { size: 17, color: 'rgba(200,208,228,0.45)', align: 'center', weight: '500' });
-
-  return { start };
+/** 지갑에 든 아이템을 한 줄로 — "되돌리기 2 · 뒤집기 1" */
+function itemLine(wallet) {
+  const parts = [];
+  for (const [name, n] of Object.entries(wallet.items)) {
+    if (n > 0) parts.push(`${ITEM_NAME[name]} ${n}`);
+  }
+  return parts.length ? parts.join(' · ') : '아이템이 없다';
 }
 
 export function pauseScreen(ctx, session) {
@@ -84,21 +93,23 @@ export function pauseScreen(ctx, session) {
     size: 22, color: 'rgba(220,228,246,0.7)', align: 'center', weight: '500',
   });
 
-  const [resume, restart, quit] = stackedButtons(3);
+  const [resume, shop, restart, quit] = stackedButtons(4, { h: 76, gap: 12 });
   button(ctx, resume, { label: '계속하기', accent: '#46f0d0', active: true });
+  button(ctx, shop, { label: '상점', accent: '#ffd166' });
   button(ctx, restart, { label: '이 레벨 다시', accent: '#9bb0ff' });
   button(ctx, quit, { label: '처음으로', accent: '#ff4d6d' });
-  return { resume, restart, quit };
+  return { resume, shop, restart, quit };
 }
 
 export function clearScreen(ctx, session) {
+  const P = CLEAR_PANEL;
   dim(ctx, 0.66);
-  panel(ctx, PANEL, { accent: 'rgba(70,240,208,0.4)' });
+  panel(ctx, P, { accent: 'rgba(70,240,208,0.4)' });
 
-  text(ctx, '판 정리 완료', W / 2, PANEL.y + 96, {
+  text(ctx, '판 정리 완료', W / 2, P.y + 86, {
     size: 46, color: '#46f0d0', align: 'center', weight: '700', glow: 22,
   });
-  text(ctx, `레벨 ${session.level}`, W / 2, PANEL.y + 148, {
+  text(ctx, `레벨 ${session.level}`, W / 2, P.y + 132, {
     size: 24, color: 'rgba(220,228,246,0.75)', align: 'center', weight: '600',
   });
 
@@ -106,33 +117,67 @@ export function clearScreen(ctx, session) {
   const rows = [
     ['매치 점수', String(session.score - (session.clearBonus || 0))],
     ['클리어 보너스', String(SCORE.clear)],
-    [`속도 보너스 (${fmtTime(session.time)})`, String((session.clearBonus || 0) - SCORE.clear)],
+    [`속도 보너스 (${fmtTime(session.time)})${speed > 0.5 ? '  빨랐다' : ''}`,
+      String((session.clearBonus || 0) - SCORE.clear)],
     ['누적 점수', String(session.total)],
   ];
   rows.forEach(([k, v], i) => {
-    const yy = PANEL.y + 230 + i * 52;
+    const yy = P.y + 204 + i * 48;
     const last = i === rows.length - 1;
-    text(ctx, k, PANEL.x + 52, yy, {
-      size: last ? 24 : 21, color: last ? '#ffffff' : 'rgba(220,228,246,0.72)', weight: last ? '700' : '500',
+    text(ctx, k, P.x + 48, yy, {
+      size: last ? 23 : 20, color: last ? '#ffffff' : 'rgba(220,228,246,0.72)', weight: last ? '700' : '500',
     });
-    text(ctx, v, PANEL.x + PANEL.w - 52, yy, {
-      size: last ? 26 : 22, color: last ? '#ffd166' : '#e8ecf7', align: 'right', weight: '700',
+    text(ctx, v, P.x + P.w - 48, yy, {
+      size: last ? 25 : 21, color: last ? '#ffd166' : '#e8ecf7', align: 'right', weight: '700',
     });
     if (last) {
       ctx.fillStyle = 'rgba(255,255,255,0.12)';
-      ctx.fillRect(PANEL.x + 52, yy - 34, PANEL.w - 104, 1);
+      ctx.fillRect(P.x + 48, yy - 32, P.w - 96, 1);
     }
   });
 
-  if (speed > 0.5) {
-    text(ctx, '빨랐다', W / 2, PANEL.y + 460, {
-      size: 22, color: '#46f0d0', align: 'center', weight: '700',
-    });
-  }
+  reward(ctx, P, session.reward);
 
-  const [next] = stackedButtons(1, { y: PANEL.y + PANEL.h - 60, h: 92 });
-  button(ctx, next, { label: `레벨 ${session.level + 1} 로`, accent: '#46f0d0', active: true });
-  return { next };
+  const [shop, next] = stackedButtons(2, { y: P.y + P.h - 34, h: 84, gap: 12, box: P });
+  const rects = {};
+  rects.shop = button(ctx, shop, { label: '상점', accent: '#ffd166' });
+  rects.next = button(ctx, next, { label: `레벨 ${session.level + 1} 로`, accent: '#46f0d0', active: true });
+  return rects;
+}
+
+/** 이번 판으로 번 것 — 골드와 아이템 세트. */
+function reward(ctx, P, got) {
+  const y = P.y + 424;
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,209,102,0.07)';
+  ctx.fillRect(P.x + 32, y - 36, P.w - 64, 128);
+  ctx.restore();
+
+  text(ctx, '이번 판 보상', P.x + 48, y, { size: 19, color: 'rgba(255,209,102,0.8)', weight: '700' });
+  if (!got) {
+    text(ctx, '없음', P.x + 48, y + 46, { size: 20, color: 'rgba(200,208,228,0.5)', weight: '500' });
+    return;
+  }
+  text(ctx, `+${got.gold}`, P.x + P.w - 48, y, {
+    size: 26, color: '#ffd166', align: 'right', weight: '700',
+  });
+
+  const names = Object.keys(got.set);
+  if (!names.length) {
+    text(ctx, '아이템 없음', P.x + 48, y + 50, { size: 19, color: 'rgba(200,208,228,0.5)', weight: '500' });
+    return;
+  }
+  names.forEach((name, i) => {
+    const x = P.x + 62 + i * 132;
+    drawIcon(ctx, name, x, y + 44, 17, ITEM_COLOR[name]);
+    text(ctx, `${ITEM_NAME[name]} +${got.set[name]}`, x, y + 78, {
+      size: 16, color: 'rgba(226,232,247,0.8)', align: 'center', weight: '600',
+    });
+  });
+}
+
+function canAffordRevive(save) {
+  return save.wallet.gold >= price('withdraw');
 }
 
 export function overScreen(ctx, session, save, rank) {
@@ -177,20 +222,23 @@ export function overScreen(ctx, session, save, rank) {
     });
   }
 
+  // 빼내기가 없으면 상점에서 사서 이어할 수 있다 — 그래서 상점은 늘 열어 둔다.
   const canRevive = session.charges.withdraw > 0 && session.tray.length > 0;
+  const menu = canRevive
+    ? [
+      ['revive', { label: '빼내기로 이어하기', sub: '맨 왼쪽 무늬로 한 벌을 완성해 비운다',
+        accent: '#ffd166', active: true, badge: session.charges.withdraw }],
+      ['shop', { label: '상점', accent: '#ffd166' }],
+    ]
+    : [
+      ['shop', { label: '상점', sub: '빼내기를 사면 그 자리에서 이어할 수 있다',
+        accent: '#ffd166', active: canAffordRevive(save) }],
+    ];
+  menu.push(['again', { label: '이 레벨 다시', accent: '#9bb0ff', active: !canRevive }]);
+  menu.push(['quit', { label: '처음으로', accent: '#ff4d6d' }]);
+
+  const slots = stackedButtons(menu.length, { h: 76, gap: 12 });
   const rects = {};
-  if (canRevive) {
-    const [revive, again, quit] = stackedButtons(3);
-    rects.revive = button(ctx, revive, {
-      label: '빼내기로 이어하기', sub: '트레이에서 3장을 판으로 되돌린다',
-      accent: '#ffd166', active: true, badge: session.charges.withdraw,
-    });
-    rects.again = button(ctx, again, { label: '이 레벨 다시', accent: '#9bb0ff' });
-    rects.quit = button(ctx, quit, { label: '처음으로', accent: '#ff4d6d' });
-  } else {
-    const [again, quit] = stackedButtons(2);
-    rects.again = button(ctx, again, { label: '이 레벨 다시', accent: '#9bb0ff', active: true });
-    rects.quit = button(ctx, quit, { label: '처음으로', accent: '#ff4d6d' });
-  }
+  menu.forEach(([name, opts], i) => { rects[name] = button(ctx, slots[i], opts); });
   return rects;
 }

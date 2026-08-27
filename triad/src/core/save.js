@@ -1,9 +1,10 @@
 // localStorage 래퍼. 어떤 경우에도 throw 하지 않는다. [NEON COIL 이식]
 
 import { SETTINGS } from '../config.js';
+import { createWallet, normalizeWallet } from '../game/wallet.js';
 
 const KEY = 'neontriad.save';
-const VERSION = 2;
+const VERSION = 3;
 export const BOARD_SIZE = 6;
 
 const DEFAULT = {
@@ -11,10 +12,12 @@ const DEFAULT = {
   best: { level: 0, score: 0 },
   board: [],                          // { level, score, time, date }
   run: null,                          // 진행 중인 판 (더미 상태까지 통째로)
+  wallet: null,                       // 골드와 아이템 (판을 넘어 남는다)
   settings: { muted: false, glow: true },
 };
 
 let data = clone(DEFAULT);
+data.wallet = createWallet();
 
 function clone(o) { return JSON.parse(JSON.stringify(o)); }
 
@@ -22,18 +25,21 @@ export function loadSave() {
   try {
     const raw = localStorage.getItem(KEY);
     const parsed = raw ? JSON.parse(raw) : null;
-    // v1 에는 진행 저장이 없었다. 기록만 넘겨받고 판은 비운 채로 시작한다.
-    if (parsed && (parsed.v === VERSION || parsed.v === 1)) {
+    // v1 에는 진행 저장이, v2 에는 지갑이 없었다. 없는 것만 새로 만들고
+    // 기록은 그대로 넘겨받는다. 판은 v2 부터 이어받을 수 있다.
+    if (parsed && parsed.v >= 1 && parsed.v <= VERSION) {
       data = Object.assign(clone(DEFAULT), parsed);
       data.v = VERSION;
       data.best = Object.assign(clone(DEFAULT.best), parsed.best);
       data.settings = Object.assign(clone(DEFAULT.settings), parsed.settings);
       data.board = Array.isArray(parsed.board) ? parsed.board.slice(0, BOARD_SIZE) : [];
-      data.run = parsed.v === VERSION ? (parsed.run || null) : null;
+      data.run = parsed.v >= 2 ? (parsed.run || null) : null;
+      data.wallet = parsed.v >= 3 ? normalizeWallet(parsed.wallet) : createWallet();
       sortBoard();
     }
   } catch {
     data = clone(DEFAULT);            // 손상된 저장은 조용히 버린다
+    data.wallet = createWallet();
   }
   SETTINGS.muted = !!data.settings.muted;
   SETTINGS.glow = data.settings.glow !== false;
@@ -79,6 +85,11 @@ export function clearRun() {
 }
 
 /** 아직 기록에 넣지 않고 몇 위가 될지만 본다 (이어하기를 고를 수 있으므로). */
+/** 지갑은 참조로 쓴다 — 세션이 아이템을 직접 깎고, 바뀌면 persist() 를 부른다. */
+export function getWallet() {
+  return data.wallet;
+}
+
 export function previewRank(score) {
   const s = Math.floor(score);
   let rank = 1;
@@ -98,6 +109,7 @@ export function persist() {
 
 export function resetSave() {
   data = clone(DEFAULT);
+  data.wallet = createWallet();
   persist();
   return data;
 }

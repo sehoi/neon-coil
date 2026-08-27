@@ -42,15 +42,41 @@ export function levelSpec(level) {
   };
 }
 
-/** 레벨마다 새로 채워지는 도구 사용 횟수. */
-export function powerCharges(level) {
+/**
+ * 아이템은 이제 레벨마다 채워지지 않는다 — 사서 쟁이는 물건이다.
+ * 처음 시작할 때만 이만큼 쥐어 준다.
+ */
+export function startingItems() {
+  return { undo: 2, withdraw: 1, flip: 2, shuffle: 0 };
+}
+
+/**
+ * 골드와 값.
+ *
+ * 한 판을 깨면 그 판 점수의 1/20 이 골드가 된다 (레벨 1 이 6000점쯤이니 300골드).
+ * 값은 "한 판 깨면 센 것 하나, 아니면 잔 것 서넛" 이 되게 잡았다.
+ */
+export const ECONOMY = {
+  goldPerScore: 20,
+  price: { undo: 60, withdraw: 150, flip: 110, shuffle: 220 },
+  /** 무료 아이템 — 15분마다 한 개. 뽑히는 비율은 값의 역순이다. */
+  free: {
+    everyMs: 15 * 60 * 1000,
+    weight: { undo: 5, flip: 3, withdraw: 2, shuffle: 1 },
+  },
+};
+
+/**
+ * 판 하나를 깰 때마다 주는 아이템 세트.
+ * 되돌리기·뒤집기는 매번, 빼내기는 두 판마다, 섞기는 세 판마다.
+ */
+export function clearReward(level) {
+  const L = Math.max(1, level | 0);
   return {
-    undo:     3,
-    withdraw: 2,
-    // 뒤집기는 보너스가 아니라 필수 도구다. 엎어진 타일은 집을 수 없어
-    // 판이 진행될수록 쌓이기만 하므로, 한 판에 몇 번은 갈아엎어야 한다.
-    flip:     4,
-    shuffle:  level >= 2 ? 1 : 0,
+    undo:     1,
+    flip:     1,
+    withdraw: L % 2 === 0 ? 1 : 0,
+    shuffle:  L % 3 === 0 ? 1 : 0,
   };
 }
 
