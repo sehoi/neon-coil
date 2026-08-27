@@ -37,6 +37,9 @@ export function levelSpec(level) {
     level: L,
     tiles: tiles - (tiles % 3),
     kinds: clamp(5 + L, 6, 12),        // 레벨마다 한 종류씩. 종류가 늘수록 트레이가 빨리 찬다
+    // 무늬를 뽑아 올 세트 수. 판마다 어느 세트가 걸릴지 달라지므로 레벨 1도
+    // 매번 다른 패로 시작한다. 세트가 늘수록 서로 안 닮은 무늬가 섞인다.
+    sets: clamp(3 + Math.floor((L - 1) / 3), 3, 5),
     layers: clamp(1.25 + L * 0.05, 1.25, 2.0),   // 더미를 몇 겹으로 쌓을지 (상자 넓이가 정해진다)
     parTime: 40 + tiles * 1.1,
   };

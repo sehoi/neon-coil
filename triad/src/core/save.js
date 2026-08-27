@@ -4,7 +4,7 @@ import { SETTINGS } from '../config.js';
 import { createWallet, normalizeWallet } from '../game/wallet.js';
 
 const KEY = 'neontriad.save';
-const VERSION = 3;
+const VERSION = 4;
 export const BOARD_SIZE = 6;
 
 const DEFAULT = {
@@ -26,14 +26,15 @@ export function loadSave() {
     const raw = localStorage.getItem(KEY);
     const parsed = raw ? JSON.parse(raw) : null;
     // v1 에는 진행 저장이, v2 에는 지갑이 없었다. 없는 것만 새로 만들고
-    // 기록은 그대로 넘겨받는다. 판은 v2 부터 이어받을 수 있다.
+    // 기록은 그대로 넘겨받는다. v3 이하의 판은 버린다 — 무늬 번호가 12종
+    // 기준이라 34종 표에 넣으면 저장할 때와 다른 패가 깔린다.
     if (parsed && parsed.v >= 1 && parsed.v <= VERSION) {
       data = Object.assign(clone(DEFAULT), parsed);
       data.v = VERSION;
       data.best = Object.assign(clone(DEFAULT.best), parsed.best);
       data.settings = Object.assign(clone(DEFAULT.settings), parsed.settings);
       data.board = Array.isArray(parsed.board) ? parsed.board.slice(0, BOARD_SIZE) : [];
-      data.run = parsed.v >= 2 ? (parsed.run || null) : null;
+      data.run = parsed.v >= VERSION ? (parsed.run || null) : null;
       data.wallet = parsed.v >= 3 ? normalizeWallet(parsed.wallet) : createWallet();
       sortBoard();
     }

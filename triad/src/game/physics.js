@@ -72,24 +72,6 @@ export function freeze(world) {
   world.asleep = true;
 }
 
-/**
- * 물체를 원하는 자리·자세에 그대로 갖다 놓는다 (도구가 판을 정리할 때).
- * 순간이동한 자리를 prev 로도 잡아 두는 것이 핵심이다 — 안 그러면 다음 스텝에서
- * v = (p - prevP)/h 가 터무니없이 커져 더미가 폭발한다.
- */
-export function placeBody(body, p, q) {
-  body.p.x = p.x; body.p.y = p.y; body.p.z = p.z;
-  body.q.x = q.x; body.q.y = q.y; body.q.z = q.z; body.q.w = q.w;
-  qNorm(body.q);
-  qToMat(body.q, body.R);
-  body.v.x = body.v.y = body.v.z = 0;
-  body.w.x = body.w.y = body.w.z = 0;
-  body.prevP.x = p.x; body.prevP.y = p.y; body.prevP.z = p.z;
-  body.prevQ.x = body.q.x; body.prevQ.y = body.q.y; body.prevQ.z = body.q.z; body.prevQ.w = body.q.w;
-  body.sleeping = false;
-  body.sleepT = 0;
-}
-
 export function removeBody(world, body) {
   const i = world.bodies.indexOf(body);
   if (i >= 0) world.bodies.splice(i, 1);
