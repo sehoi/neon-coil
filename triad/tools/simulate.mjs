@@ -8,10 +8,10 @@ import { seed } from '../src/core/rng.js';
 import { LAYOUT } from '../src/config.js';
 import { levelSpec, TRAY_CAP } from '../src/data/tuning.js';
 import {
-  createSession, update, pickTile, rescueFlip,
+  createSession, update, pickTile,
   useFlip, useWithdraw, useShuffle,
 } from '../src/game/session.js';
-import { visibleFront, remaining } from '../src/game/pile.js';
+import { visibleFront, visibleTiles, remaining } from '../src/game/pile.js';
 import { createCamera, frameBox, screenRay, projectPoint } from '../src/render/camera.js';
 
 const LEVELS = Number(process.argv[2]) || 12;
@@ -40,6 +40,15 @@ function visible(session, cam) {
   );
 }
 
+/** 무늬를 몰라도 누를 수는 있는 타일 전부. */
+function clickable(session, cam) {
+  return visibleTiles(
+    session.pile,
+    { projectPoint: (p) => projectPoint(cam, p, {}) },
+    (x, y) => screenRay(cam, x, y),
+  );
+}
+
 /** 사람처럼 두는 봇: 짝을 맞출 수 있으면 맞추고, 아니면 여럿 보이는 무늬를 모은다. */
 function play(level, s) {
   seed(s);
@@ -49,14 +58,7 @@ function play(level, s) {
 
   let guard = 600;
   while (session.state === 'play' && guard-- > 0) {
-    let vis = visible(session, cam);
-    if (!vis.length) {
-      // 남은 것이 전부 엎어진 경우 — 게임과 똑같이 구제한다
-      if (rescueFlip(session)) { settle(session, 3); continue; }
-      settle(session, 2);
-      vis = visible(session, cam);
-      if (!vis.length) break;
-    }
+    const vis = visible(session, cam);
 
     const tray = new Map();
     for (const t of session.tray) tray.set(t.kind, (tray.get(t.kind) || 0) + 1);
@@ -66,9 +68,9 @@ function play(level, s) {
       seen.get(t.kind).push(t);
     }
 
-    // 사람이라면 몰릴 때 도구를 쓴다. 봇도 같은 순서로 쓴다.
+    // 사람이라면 판이 안 읽히거나 몰릴 때 도구를 쓴다. 봇도 같은 순서로 쓴다.
     const canComplete = [...seen].some(([kind, g]) => (tray.get(kind) || 0) + g.length >= 3);
-    if (session.tray.length >= TRAY_CAP - 2 && !canComplete) {
+    if (vis.length < 8 || (session.tray.length >= TRAY_CAP - 2 && !canComplete)) {
       if (useFlip(session)) { settle(session, 2); continue; }
       if (useWithdraw(session)) { settle(session, 2); continue; }
       if (useShuffle(session)) { settle(session, 3); continue; }
@@ -83,15 +85,21 @@ function play(level, s) {
       else sc = group.length * 8 + inTray * 6 - (session.tray.length >= TRAY_CAP - 2 ? 60 : 0);
       if (sc > bestScore) { bestScore = sc; best = group[0]; }
     }
-    if (!best) break;
 
-    pickTile(session, best, true);
+    // 무늬 아는 것 중에 쓸 만한 게 없으면 눈 감고 집는다 (엎어진 것도 집을 수 있다)
+    if (!best) {
+      const blind = clickable(session, cam);
+      if (!blind.length) break;
+      best = blind[0];
+    }
+
+    pickTile(session, best);
     settle(session, 1.2);            // 무너지는 것을 기다린다
   }
   return session;
 }
 
-console.log('레벨  타일  무늬 |  클리어  평균 집기  평균 되돌림  막힘');
+console.log('레벨  타일  무늬 |  클리어  평균 집기  눈감고 집기  손 못 댐');
 let ok = true;
 for (let lv = 1; lv <= LEVELS; lv++) {
   const spec = levelSpec(lv);
@@ -101,7 +109,7 @@ for (let lv = 1; lv <= LEVELS; lv++) {
     if (s.state === 'won') wins++;
     if (s.state === 'play') stuck++;          // 봇이 손을 못 댄 판
     picks += s.stats.picks;
-    blocked += s.stats.blocked;
+    blocked += s.stats.blind;
   }
   if (stuck) ok = false;
   console.log(

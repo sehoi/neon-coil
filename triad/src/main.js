@@ -8,9 +8,9 @@ import { attachInput, input, consumeRect, takeTap, key, endFrame, pointInRect } 
 import { SYMBOLS } from './data/symbols.js';
 import {
   createSession, update as updateSession, pickTile,
-  useUndo, useWithdraw, useShuffle, useFlip, revive, rescueFlip,
+  useUndo, useWithdraw, useShuffle, useFlip, revive,
 } from './game/session.js';
-import { pickRay, remaining, visibleFront, hasPlayable } from './game/pile.js';
+import { pickRay, remaining, visibleFront, visibleTiles as visibleAny } from './game/pile.js';
 import { createCamera, frameBox, screenRay, projectPoint } from './render/camera.js';
 import { drawPile, drawTable } from './render/pile3d.js';
 import { drawBackground, drawTrayTiles, drawComboFloat, trayBurstPoint } from './render/renderer.js';
@@ -32,7 +32,6 @@ const game = {
   rank: 0,
   t: 0,
   screenRects: {},
-  stuckT: 0,
   hot: null,                      // 마우스가 올라간 타일
 };
 
@@ -43,7 +42,8 @@ attachInput(canvas);
 
 function newSession(level, total = 0, runTime = 0) {
   game.session = createSession(level, total, runTime);
-  frameBox(game.cam, game.session.pile.halfX, game.session.pile.halfZ, 1.8, 1.12);
+  // 더미가 3~3.7 단위까지 솟으므로 그 높이를 담아 잡는다 (안 그러면 꼭대기가 잘린다)
+  frameBox(game.cam, game.session.pile.halfX, game.session.pile.halfZ, 2.8, 1.12);
   game.hot = null;
 }
 
@@ -113,21 +113,10 @@ function stepPlay() {
     if (consumeRect(powers[name])) doPower(name);
   }
 
-  // 남은 것이 전부 엎어져 굳는 경우를 가끔 확인한다.
-  // 싼 검사(타일당 광선 하나)로 걸러 내고, 걸렸을 때만 비싼 검사로 확인한다.
-  game.stuckT += 1 / 60;
-  if (game.stuckT > 0.5) {
-    game.stuckT = 0;
-    const s = game.session;
-    if (!s.pouring && s.pile.world.asleep && !hasPlayable(s.pile, game.cam.eye) && !visibleTiles().length) {
-      rescueFlip(s);
-    }
-  }
-
   const tap = takeTap();
   if (tap && pointInRect(tap.x, tap.y, LAYOUT.board)) {
     const hit = pickRay(game.session.pile, screenRay(game.cam, tap.x, tap.y));
-    if (hit) pickTile(game.session, hit.tile, hit.faceUp);
+    if (hit) pickTile(game.session, hit.tile);   // 누를 수 있으면 무조건 집힌다
   }
 }
 
@@ -190,10 +179,7 @@ function drainEvents() {
   for (const e of s.events) {
     switch (e.type) {
       case 'pick':
-        sfx('pick', s.tray.length);
-        break;
-      case 'blocked':
-        sfx('blocked');
+        sfx(e.blind ? 'warn' : 'pick', s.tray.length);
         break;
       case 'match': {
         sfx('match', s.combo);
@@ -224,13 +210,6 @@ function drainEvents() {
         break;
       case 'revive':
         sfx('power');
-        break;
-      case 'rescue':
-        sfx('power');
-        game.floats.push({
-          text: '엎어진 타일을 뒤집었다', x: W / 2, y: LAYOUT.board.y + LAYOUT.board.h - 40,
-          color: '#ff6bd6', t: 0, dur: 1.6,
-        });
         break;
     }
   }
@@ -265,7 +244,7 @@ function draw() {
   if (!IS_TOUCH && game.state === 'play' && input.pointer.inside &&
       pointInRect(input.pointer.x, input.pointer.y, LAYOUT.board)) {
     const hit = pickRay(s.pile, screenRay(game.cam, input.pointer.x, input.pointer.y));
-    if (hit && hit.faceUp) game.hot = hit.tile;
+    if (hit) game.hot = hit.tile;
   }
   drawPile(ctx, game.cam, s.pile.tiles, game.hot);
   ctx.restore();
@@ -288,12 +267,8 @@ function draw() {
   }
 }
 
-function visibleTiles() {
-  return visibleFront(
-    game.session.pile,
-    { projectPoint: (p) => projectPoint(game.cam, p, {}) },
-    (x, y) => screenRay(game.cam, x, y),
-  );
+function camAdapter() {
+  return { projectPoint: (p) => projectPoint(game.cam, p, {}) };
 }
 
 function hoveredPower() {
@@ -312,8 +287,11 @@ window.TR = {
   get pile() { return game.session.pile; },
   start(level = 1) { initAudio(); startRun(level); },
   /** 지금 화면에서 무늬가 보이는 타일들 — 집을 수 있는 것 전부. */
-  visible() { return visibleTiles(); },
-  pick(tile) { return pickTile(game.session, tile, true); },
+  /** 무늬가 보이는 타일 (무엇인지 알고 집을 수 있는 것). */
+  visible() { return visibleFront(game.session.pile, camAdapter(), (x, y) => screenRay(game.cam, x, y)); },
+  /** 눌러서 집을 수 있는 타일 전부 (엎어진 것 포함). */
+  clickable() { return visibleAny(game.session.pile, camAdapter(), (x, y) => screenRay(game.cam, x, y)); },
+  pick(tile) { return pickTile(game.session, tile); },
   /** 보이는 타일 중 세 장 짝이 되는 것을 골라 자동으로 집는다. */
   auto(n = 3) {
     const vis = this.visible();

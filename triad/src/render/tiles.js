@@ -7,7 +7,7 @@ import { SYMBOLS, drawSymbol } from '../data/symbols.js';
 import { roundRect } from '../ui/widgets.js';
 
 export function drawTile(ctx, r, kind, {
-  covered = false, alpha = 1, selected = false, pop = 0, shake = 0,
+  covered = false, alpha = 1, selected = false, pop = 0,
 } = {}) {
   const sym = SYMBOLS[kind] || SYMBOLS[0];
   const radius = TILE.radius * (r.h / TILE.h);
@@ -16,7 +16,6 @@ export function drawTile(ctx, r, kind, {
   ctx.save();
   ctx.globalAlpha = alpha;
 
-  if (shake > 0) ctx.translate(Math.sin(shake * 90) * 5 * shake, 0);
   if (pop > 0) {
     ctx.translate(r.x + r.w / 2, r.y + r.h / 2);
     ctx.scale(1 + pop * 0.55, 1 + pop * 0.55);
@@ -33,7 +32,7 @@ export function drawTile(ctx, r, kind, {
 
   // 옆면
   roundRect(ctx, r.x, r.y + thick, r.w, r.h - thick, radius);
-  ctx.fillStyle = covered ? '#7d8599' : '#8e97ad';
+  ctx.fillStyle = covered ? '#7d8599' : '#a8a293';
   ctx.fill();
 
   // 윗면
@@ -43,8 +42,8 @@ export function drawTile(ctx, r, kind, {
     g.addColorStop(0, '#c2c9d8');
     g.addColorStop(1, '#9aa2b4');
   } else {
-    g.addColorStop(0, '#fbfcff');
-    g.addColorStop(1, '#ccd4e6');
+    g.addColorStop(0, '#f6f3ea');
+    g.addColorStop(1, '#ddd8c8');
   }
   ctx.fillStyle = g;
   ctx.fill();
@@ -53,10 +52,19 @@ export function drawTile(ctx, r, kind, {
   ctx.strokeStyle = covered ? 'rgba(30,36,52,0.5)' : 'rgba(70,80,104,0.55)';
   ctx.stroke();
 
+  // 마작패처럼 얼굴을 한 단 파 넣는다 (더미의 3D 타일과 같은 인상)
+  const pad = Math.max(3, r.w * 0.11);
+  roundRect(ctx, r.x + pad, r.y + pad, r.w - pad * 2, r.h - thick - pad * 2, radius * 0.7);
+  ctx.fillStyle = covered ? 'rgba(255,255,255,0.10)' : '#fffdf6';
+  ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(150,140,116,0.45)';
+  ctx.stroke();
+
   // 무늬
   const cx = r.x + r.w / 2;
   const cy = r.y + (r.h - thick) / 2;
-  const rad = Math.min(r.w, r.h - thick) * 0.31;
+  const rad = Math.min(r.w, r.h - thick) * 0.29;
   ctx.save();
   if (covered) ctx.globalAlpha = ctx.globalAlpha * 0.82;
   else if (SETTINGS.glow) { ctx.shadowColor = sym.color; ctx.shadowBlur = 10; }

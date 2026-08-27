@@ -22,9 +22,10 @@ export const LAYOUT = {
 
 /** 캔버스 백버퍼를 DPR 에 맞춘다. 논리 좌표계는 항상 W×H 그대로다. */
 export function fitCanvas(canvas) {
-  // 3D 더미는 픽셀을 많이 칠한다. 고DPI 기기에서 원본 배율로 그리면
-  // 채우기만으로 프레임이 무너지므로 상한을 둔다.
-  const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+  // 3D 더미는 픽셀을 많이 칠한다 (타일 180장이면 면이 1000개가 넘는다).
+  // 고DPI 기기에서 원본 배율로 그리면 채우기만으로 프레임이 무너지므로,
+  // 백버퍼를 논리 해상도의 1.4배(= 약 160만 화소)로 묶는다.
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.4);
   const w = Math.round(W * dpr);
   const h = Math.round(H * dpr);
   if (canvas.width !== w || canvas.height !== h) {

@@ -10,7 +10,7 @@ import { drawSlot } from '../render/tiles.js';
 import { traySlot } from '../render/geom.js';
 
 const POWER_LABEL = { undo: '되돌리기', withdraw: '빼내기', flip: '뒤집기', shuffle: '섞기' };
-const POWER_HINT  = { undo: '한 장 취소', withdraw: '3장 꺼내기', flip: '엎어진 것', shuffle: '다시 쏟기' };
+const POWER_HINT  = { undo: '한 장 취소', withdraw: '3장 꺼내기', flip: '무늬 보기', shuffle: '다시 쏟기' };
 const POWER_KEY   = { undo: 'Z', withdraw: 'X', flip: 'V', shuffle: 'C' };
 const POWER_COLOR = { undo: '#9bb0ff', withdraw: '#ffd166', flip: '#ff6bd6', shuffle: '#46f0d0' };
 
