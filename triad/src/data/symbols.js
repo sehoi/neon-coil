@@ -25,7 +25,8 @@ export function drawSymbol(ctx, id, x, y, r, color) {
   ctx.translate(x, y);
   ctx.strokeStyle = color;
   ctx.fillStyle = color;
-  ctx.lineWidth = Math.max(1.6, r * 0.2);
+  ctx.lineWidth = r * 0.2;      // 최소값을 두면 안 된다 — 3D 면 위에서는
+                                // 좌표계가 타일 크기(1)라 픽셀 기준 최소값이 타일을 덮는다
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
 

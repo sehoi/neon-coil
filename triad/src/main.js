@@ -5,11 +5,15 @@ import { seed } from './core/rng.js';
 import { initAudio, sfx } from './core/audio.js';
 import { loadSave, getSave, submitRun, previewRank, persist } from './core/save.js';
 import { attachInput, input, consumeRect, takeTap, key, endFrame, pointInRect } from './core/input.js';
-import { ANIM } from './data/tuning.js';
 import { SYMBOLS } from './data/symbols.js';
-import { createSession, update as updateSession, pickTile, useUndo, useWithdraw, useShuffle, revive } from './game/session.js';
-import { hitTile } from './render/geom.js';
-import { boardView, drawBackground, drawBoard, drawTrayTiles, drawComboFloat, trayBurstPoint } from './render/renderer.js';
+import {
+  createSession, update as updateSession, pickTile,
+  useUndo, useWithdraw, useShuffle, useFlip, revive, rescueFlip,
+} from './game/session.js';
+import { pickRay, remaining, visibleFront, hasPlayable } from './game/pile.js';
+import { createCamera, frameBox, screenRay, projectPoint } from './render/camera.js';
+import { drawPile, drawTable } from './render/pile3d.js';
+import { drawBackground, drawTrayTiles, drawComboFloat, trayBurstPoint } from './render/renderer.js';
 import { burst, updateParticles, clearParticles } from './render/particles.js';
 import { drawHud, drawTray, drawPowers } from './ui/hud.js';
 import { titleScreen, pauseScreen, clearScreen, overScreen } from './ui/screens.js';
@@ -23,18 +27,25 @@ const save = loadSave();
 const game = {
   state: 'title',                 // title | play | pause | clear | over
   session: null,
-  view: null,
+  cam: createCamera(LAYOUT.board),
   floats: [],
   rank: 0,
   t: 0,
-  auto: null,                     // 디버그 자동 풀이
   screenRects: {},
+  stuckT: 0,
+  hot: null,                      // 마우스가 올라간 타일
 };
 
 seed((Date.now() ^ 0x9e3779b9) >>> 0);
-game.session = createSession(1);
+newSession(1);
 
 attachInput(canvas);
+
+function newSession(level, total = 0, runTime = 0) {
+  game.session = createSession(level, total, runTime);
+  frameBox(game.cam, game.session.pile.halfX, game.session.pile.halfZ, 1.8, 1.12);
+  game.hot = null;
+}
 
 // ── 루프 ──────────────────────────────────────────────────────────────────
 
@@ -57,13 +68,13 @@ function step(dt) {
 
   switch (game.state) {
     case 'title':  stepTitle(); break;
-    case 'play':   stepPlay(dt); break;
+    case 'play':   stepPlay(); break;
     case 'pause':  stepPause(); break;
     case 'clear':  stepClear(); break;
     case 'over':   stepOver(); break;
   }
 
-  // 일시정지에서만 연출을 멈춘다. 클리어/게임오버 화면 뒤에서는 마저 터지게 둔다
+  // 일시정지에서만 더미를 멈춘다. 클리어·게임오버 화면 뒤에서는 마저 무너지게 둔다.
   updateSession(game.session, game.state === 'pause' ? 0 : dt);
   updateParticles(dt);
   for (let i = game.floats.length - 1; i >= 0; i--) {
@@ -87,26 +98,36 @@ function stepTitle() {
   }
 }
 
-function stepPlay(dt) {
+function stepPlay() {
   if (key('Escape') || key('KeyP')) { game.state = 'pause'; sfx('ui'); return; }
   if (key('KeyZ')) doPower('undo');
   if (key('KeyX')) doPower('withdraw');
+  if (key('KeyV')) doPower('flip');
   if (key('KeyC')) doPower('shuffle');
 
   if (consumeRect(BTN.pause)) { game.state = 'pause'; sfx('ui'); return; }
   if (consumeRect(BTN.mute)) { toggleMute(); return; }
 
-  const powers = powerRectsCache();
+  const powers = cachedPowers || {};
   for (const name of POWERS) {
     if (consumeRect(powers[name])) doPower(name);
   }
 
-  if (game.auto) tickAuto(dt);
+  // 남은 것이 전부 엎어져 굳는 경우를 가끔 확인한다.
+  // 싼 검사(타일당 광선 하나)로 걸러 내고, 걸렸을 때만 비싼 검사로 확인한다.
+  game.stuckT += 1 / 60;
+  if (game.stuckT > 0.5) {
+    game.stuckT = 0;
+    const s = game.session;
+    if (!s.pouring && s.pile.world.asleep && !hasPlayable(s.pile, game.cam.eye) && !visibleTiles().length) {
+      rescueFlip(s);
+    }
+  }
 
   const tap = takeTap();
-  if (tap && tap.y < LAYOUT.tray.y - 20) {
-    const tile = hitTile(game.session.board, game.view, tap.x, tap.y);
-    if (tile) pickTile(game.session, tile);
+  if (tap && pointInRect(tap.x, tap.y, LAYOUT.board)) {
+    const hit = pickRay(game.session.pile, screenRay(game.cam, tap.x, tap.y));
+    if (hit) pickTile(game.session, hit.tile, hit.faceUp);
   }
 }
 
@@ -121,7 +142,7 @@ function stepClear() {
   if (consumeRect(game.screenRects.next) || key('Space') || key('Enter')) {
     sfx('ui');
     const s = game.session;
-    game.session = createSession(s.level + 1, s.total, s.runTime + s.time);
+    newSession(s.level + 1, s.total, s.runTime + s.time);
     clearParticles();
     game.state = 'play';
   }
@@ -139,8 +160,7 @@ function stepOver() {
 // ── 진행 ──────────────────────────────────────────────────────────────────
 
 function startRun(level) {
-  game.session = createSession(level);
-  game.auto = null;
+  newSession(level);
   game.rank = 0;
   clearParticles();
   game.floats.length = 0;
@@ -160,6 +180,7 @@ function doPower(name) {
   const s = game.session;
   const ok = name === 'undo' ? useUndo(s)
     : name === 'withdraw' ? useWithdraw(s)
+    : name === 'flip' ? useFlip(s)
     : useShuffle(s);
   if (!ok) sfx('blocked');
 }
@@ -177,7 +198,7 @@ function drainEvents() {
       case 'match': {
         sfx('match', s.combo);
         const color = SYMBOLS[e.tiles[0].kind].color;
-        const fresh = s.popping.slice(-3);          // 방금 터진 세 장만
+        const fresh = s.popping.slice(-3);
         for (const p of fresh) {
           const at = trayBurstPoint(p.slot);
           burst(at.x, at.y, color, 12);
@@ -204,6 +225,13 @@ function drainEvents() {
       case 'revive':
         sfx('power');
         break;
+      case 'rescue':
+        sfx('power');
+        game.floats.push({
+          text: '엎어진 타일을 뒤집었다', x: W / 2, y: LAYOUT.board.y + LAYOUT.board.h - 40,
+          color: '#ff6bd6', t: 0, dur: 1.6,
+        });
+        break;
     }
   }
   s.events.length = 0;
@@ -217,25 +245,34 @@ function toggleMute() {
 
 // ── 그리기 ────────────────────────────────────────────────────────────────
 
+let cachedPowers = null;
+
 function draw() {
   const dpr = fitCanvas(canvas);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
   const s = game.session;
-  game.view = boardView(s.board);
+  drawBackground(ctx);
 
-  drawBackground(ctx, game.t);
+  // 판 영역 밖으로 타일이 새지 않게 잘라낸다
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(LAYOUT.board.x, LAYOUT.board.y, LAYOUT.board.w, LAYOUT.board.h);
+  ctx.clip();
+  drawTable(ctx, game.cam, s.pile.halfX, s.pile.halfZ);
 
-  const hover = (!IS_TOUCH && game.state === 'play' && input.pointer.inside)
-    ? hitTile(s.board, game.view, input.pointer.x, input.pointer.y)
-    : null;
+  game.hot = null;
+  if (!IS_TOUCH && game.state === 'play' && input.pointer.inside &&
+      pointInRect(input.pointer.x, input.pointer.y, LAYOUT.board)) {
+    const hit = pickRay(s.pile, screenRay(game.cam, input.pointer.x, input.pointer.y));
+    if (hit && hit.faceUp) game.hot = hit.tile;
+  }
+  drawPile(ctx, game.cam, s.pile.tiles, game.hot);
+  ctx.restore();
 
-  drawBoard(ctx, s, game.view, hover);
-
-  // 타이틀에서는 판만 배경처럼 두고 나머지 UI 는 걷어낸다
   if (game.state !== 'title') {
     drawTray(ctx, s);
-    drawTrayTiles(ctx, s, game.view);
+    drawTrayTiles(ctx, s, game.cam);
     drawComboFloat(ctx, game.floats);
     drawHud(ctx, s, save.best);
     const hoverPower = !IS_TOUCH ? hoveredPower() : null;
@@ -251,9 +288,12 @@ function draw() {
   }
 }
 
-let cachedPowers = null;
-function powerRectsCache() {
-  return cachedPowers || {};
+function visibleTiles() {
+  return visibleFront(
+    game.session.pile,
+    { projectPoint: (p) => projectPoint(game.cam, p, {}) },
+    (x, y) => screenRay(game.cam, x, y),
+  );
 }
 
 function hoveredPower() {
@@ -266,32 +306,32 @@ function hoveredPower() {
 
 // ── 디버그 훅 ─────────────────────────────────────────────────────────────
 
-function tickAuto(dt) {
-  const a = game.auto;
-  a.timer -= dt;
-  if (a.timer > 0) return;
-  a.timer = a.every;
-  const s = game.session;
-  const byId = a.byId;
-  while (a.i < a.ids.length) {
-    const tile = byId.get(a.ids[a.i++]);
-    if (tile && tile.state === 'board') { pickTile(s, tile); return; }
-  }
-  game.auto = null;
-}
-
 window.TR = {
   get game() { return game; },
   get session() { return game.session; },
+  get pile() { return game.session.pile; },
   start(level = 1) { initAudio(); startRun(level); },
-  /** 지금 집을 수 있는 타일들. */
-  free() { return game.session.board.tiles.filter(t => t.state === 'board' && t.blockedBy === 0); },
-  pick(tile) { return pickTile(game.session, tile); },
-  /** 생성 시점의 정답 순서대로 자동으로 푼다. 판을 건드린 뒤에는 맞지 않는다. */
-  solve(every = 0.12) {
-    const s = game.session;
-    game.auto = { ids: s.board.solution.slice(), i: 0, timer: 0, every, byId: new Map(s.board.tiles.map(t => [t.id, t])) };
-    game.state = 'play';
+  /** 지금 화면에서 무늬가 보이는 타일들 — 집을 수 있는 것 전부. */
+  visible() { return visibleTiles(); },
+  pick(tile) { return pickTile(game.session, tile, true); },
+  /** 보이는 타일 중 세 장 짝이 되는 것을 골라 자동으로 집는다. */
+  auto(n = 3) {
+    const vis = this.visible();
+    const byKind = new Map();
+    for (const t of vis) {
+      if (!byKind.has(t.kind)) byKind.set(t.kind, []);
+      byKind.get(t.kind).push(t);
+    }
+    let done = 0;
+    for (const [, group] of byKind) {
+      if (group.length < 3 || done >= n) continue;
+      for (const t of group.slice(0, 3)) pickTile(game.session, t, true);
+      done++;
+    }
+    return done;
   },
+  remaining() { return remaining(game.session.pile); },
+  project(p) { return projectPoint(game.cam, p, {}); },
+  rayAt(x, y) { return pickRay(game.session.pile, screenRay(game.cam, x, y)); },
   save: getSave,
 };

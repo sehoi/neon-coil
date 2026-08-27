@@ -29,6 +29,19 @@ export function drawIcon(ctx, name, x, y, s, color) {
       ctx.stroke();
       arrowHead(ctx, i * s * 0.42, -s * 0.44, -Math.PI / 2, s * 0.3);
     }
+  } else if (name === 'flip') {
+    // 뒤집기 — 타일 한 장이 축을 돌아 넘어간다
+    ctx.beginPath();
+    ctx.ellipse(0, 0, s * 0.72, s * 0.26, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.34, -s * 0.68);
+    ctx.lineTo(s * 0.34, -s * 0.68);
+    ctx.lineTo(s * 0.34, -s * 0.1);
+    ctx.lineTo(-s * 0.34, -s * 0.1);
+    ctx.closePath();
+    ctx.stroke();
+    arrowHead(ctx, s * 0.72, s * 0.02, Math.PI / 2, s * 0.3);
   } else {
     // shuffle — 엇갈리는 두 화살
     ctx.beginPath();

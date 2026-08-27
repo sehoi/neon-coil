@@ -7,11 +7,11 @@ export const BTN = {
   mute:  { x: W - 88, y: 24, w: 68, h: 68 },
 };
 
-export const POWERS = ['undo', 'withdraw', 'shuffle'];
+export const POWERS = ['undo', 'withdraw', 'flip', 'shuffle'];
 
 export function powerRects() {
   const p = LAYOUT.power;
-  const total = p.w * 3 + p.gap * 2;
+  const total = p.w * POWERS.length + p.gap * (POWERS.length - 1);
   const x0 = (W - total) / 2;
   const out = {};
   POWERS.forEach((name, i) => {

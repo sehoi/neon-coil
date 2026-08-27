@@ -27,13 +27,13 @@ export function titleScreen(ctx, save, t) {
   text(ctx, 'NEON TRIAD', W / 2, 452, {
     size: 66, color: '#ffffff', align: 'center', weight: '700', glow: 26,
   });
-  text(ctx, '같은 무늬 3장을 모아 판을 비운다', W / 2, 502, {
+  text(ctx, '쏟아진 타일 더미에서 같은 무늬 셋을 모은다', W / 2, 502, {
     size: 24, color: 'rgba(220,228,246,0.75)', align: 'center', weight: '500',
   });
 
   const rows = [
-    ['1', '덮이지 않은 밝은 타일만 집을 수 있다'],
-    ['2', '집은 타일은 아래 트레이에 쌓인다'],
+    ['1', '무늬가 보이는 타일은 무엇이든 집힌다'],
+    ['2', '엎어지거나 모로 선 것은 못 집는다'],
     ['3', '같은 무늬 3장이 모이면 사라진다'],
     ['!', '트레이 7칸이 다 차면 그 판은 끝난다'],
   ];
@@ -52,8 +52,8 @@ export function titleScreen(ctx, save, t) {
   const [start] = stackedButtons(1, { y: 992, h: 96 });
   button(ctx, start, { label: '시작', accent: '#46f0d0', active: true });
 
-  text(ctx, IS_TOUCH ? '타일을 눌러 집는다' : '클릭으로 집는다 · Z 되돌리기 · X 빼내기 · C 섞기 · P 일시정지',
-    W / 2, 1064, { size: 18, color: 'rgba(200,208,228,0.45)', align: 'center', weight: '500' });
+  text(ctx, IS_TOUCH ? '타일을 눌러 집는다' : '클릭으로 집는다 · Z 되돌리기 · X 빼내기 · V 뒤집기 · C 섞기',
+    W / 2, 1064, { size: 17, color: 'rgba(200,208,228,0.45)', align: 'center', weight: '500' });
 
   return { start };
 }
