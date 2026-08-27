@@ -5,6 +5,7 @@ import { levelSpec, powerCharges, TRAY_CAP, SCORE, ANIM } from '../data/tuning.j
 import { axis } from '../core/v3.js';
 import {
   createPile, pourTick, stepPile, liftTile, dropBack, retoss, flipDown, remaining,
+  serializePile, restorePile,
 } from './pile.js';
 
 export function createSession(level, totalScore = 0, runTime = 0) {
@@ -140,6 +141,59 @@ function win(session) {
   session.total += bonus;
   session.clearBonus = bonus;
   session.events.push({ type: 'win', bonus });
+}
+
+// ── 저장과 복원 ───────────────────────────────────────────────────────────
+
+/**
+ * 진행 중인 판을 통째로 적어 둔다.
+ * 되돌리기 기록(history)은 트레이 순서로 대신한다 — 어차피 마지막에 집은 것부터
+ * 되돌리는 것이고, 트레이 순서가 그 근사치다.
+ */
+export function serializeSession(session) {
+  return {
+    level: session.level,
+    total: session.total,
+    score: session.score,
+    combo: session.combo,
+    picksSinceMatch: session.picksSinceMatch,
+    time: Math.round(session.time * 10) / 10,
+    runTime: Math.round(session.runTime * 10) / 10,
+    charges: { ...session.charges },
+    stats: { ...session.stats },
+    asleep: session.pile.world.asleep,
+    tray: session.tray.map(t => t.id),
+    tiles: serializePile(session.pile),
+  };
+}
+
+/** 적어 둔 판을 되살린다. 실패하면 null — 저장이 깨졌다고 게임이 멈추면 안 된다. */
+export function restoreSession(data) {
+  try {
+    if (!data || !Array.isArray(data.tiles) || !data.tiles.length) return null;
+
+    const spec = levelSpec(data.level);
+    if (data.tiles.length !== spec.tiles) return null;   // 밸런싱이 바뀌면 이어받지 않는다
+
+    const session = createSession(data.level, data.total, data.runTime);
+    session.pile.tiles.length = 0;
+    restorePile(session.pile, data.tiles, !!data.asleep);
+    session.pouring = false;
+
+    const byId = new Map(session.pile.tiles.map(t => [t.id, t]));
+    session.tray = data.tray.map(id => byId.get(id)).filter(Boolean);
+    session.history = session.tray.slice();
+
+    session.score = data.score || 0;
+    session.combo = data.combo || 0;
+    session.picksSinceMatch = data.picksSinceMatch || 0;
+    session.time = data.time || 0;
+    session.charges = { ...session.charges, ...(data.charges || {}) };
+    session.stats = { ...session.stats, ...(data.stats || {}) };
+    return session;
+  } catch {
+    return null;
+  }
 }
 
 // ── 도구 ──────────────────────────────────────────────────────────────────

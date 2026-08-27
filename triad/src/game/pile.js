@@ -283,3 +283,47 @@ export function visibleFront(pile, cam, screenRay, samples = 5) {
 }
 
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+// ── 저장과 복원 ───────────────────────────────────────────────────────────
+
+const R4 = (v) => Math.round(v * 1e4) / 1e4;   // 소수 넷째 자리면 눈으로 같은 자리다
+
+/** 더미를 그대로 적어 둔다. 타일마다 무늬·상태와, 판 위에 있으면 위치·자세. */
+export function serializePile(pile) {
+  return pile.tiles.map((t) => {
+    const row = [t.kind, t.state === 'pile' ? 0 : t.state === 'tray' ? 1 : 2];
+    if (t.state === 'pile') {
+      const b = t.body;
+      row.push(R4(b.p.x), R4(b.p.y), R4(b.p.z), R4(b.q.x), R4(b.q.y), R4(b.q.z), R4(b.q.w));
+    }
+    return row;
+  });
+}
+
+/**
+ * 적어 둔 더미를 되살린다. 속도는 버린다 — 저장 순간 공중에 있었더라도
+ * 그 자리에서 다시 떨어지면 그만이고, 그 편이 재현하기 쉽고 안전하다.
+ */
+export function restorePile(pile, rows, asleep = false) {
+  for (let id = 0; id < rows.length; id++) {
+    const row = rows[id];
+    const kind = row[0];
+    const state = row[1] === 0 ? 'pile' : row[1] === 1 ? 'tray' : 'gone';
+    const tile = { id, kind, body: null, state };
+    if (state === 'pile') {
+      const body = addBody(pile.world, {
+        p: v3(row[2], row[3], row[4]),
+        q: { x: row[5], y: row[6], z: row[7], w: row[8] },
+        hx: TILE3D.hx, hy: TILE3D.hy, hz: TILE3D.hz,
+      });
+      body.tile = tile;
+      tile.body = body;
+      if (asleep) { body.sleeping = true; body.sleepT = 1; }
+    }
+    pile.tiles.push(tile);
+  }
+  pile.poured = rows.length;
+  pile.settleT = 0;
+  pile.world.asleep = asleep;
+  return pile;
+}

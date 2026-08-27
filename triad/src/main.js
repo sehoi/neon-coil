@@ -3,11 +3,11 @@
 import { W, H, LAYOUT, SETTINGS, IS_TOUCH, fitCanvas } from './config.js';
 import { seed } from './core/rng.js';
 import { initAudio, sfx } from './core/audio.js';
-import { loadSave, getSave, submitRun, previewRank, persist } from './core/save.js';
+import { loadSave, getSave, submitRun, previewRank, persist, saveRun, loadRun, clearRun } from './core/save.js';
 import { attachInput, input, consumeRect, takeTap, key, endFrame, pointInRect } from './core/input.js';
 import { SYMBOLS } from './data/symbols.js';
 import {
-  createSession, update as updateSession, pickTile,
+  createSession, update as updateSession, pickTile, serializeSession, restoreSession,
   useUndo, useWithdraw, useShuffle, useFlip, revive,
 } from './game/session.js';
 import { pickRay, remaining, visibleFront, visibleTiles as visibleAny } from './game/pile.js';
@@ -32,7 +32,9 @@ const game = {
   rank: 0,
   t: 0,
   screenRects: {},
-  hot: null,                      // 마우스가 올라간 타일
+  hot: null,
+  saveT: 0,
+  wasPouring: true,                      // 마우스가 올라간 타일
 };
 
 seed((Date.now() ^ 0x9e3779b9) >>> 0);
@@ -40,11 +42,49 @@ newSession(1);
 
 attachInput(canvas);
 
+// 탭을 닫거나 홈으로 나갈 때. pagehide 는 모바일에서 unload 보다 확실하게 온다.
+for (const ev of ['pagehide', 'visibilitychange']) {
+  window.addEventListener(ev, () => {
+    if (document.visibilityState === 'hidden' && game.state === 'play') saveProgress(true);
+  });
+}
+
 function newSession(level, total = 0, runTime = 0) {
-  game.session = createSession(level, total, runTime);
+  useSession(createSession(level, total, runTime));
+}
+
+function useSession(session) {
+  game.session = session;
   // 더미가 3~3.7 단위까지 솟으므로 그 높이를 담아 잡는다 (안 그러면 꼭대기가 잘린다)
-  frameBox(game.cam, game.session.pile.halfX, game.session.pile.halfZ, 2.8, 1.12);
+  frameBox(game.cam, session.pile.halfX, session.pile.halfZ, 2.8, 1.12);
   game.hot = null;
+  game.wasPouring = session.pouring;
+}
+
+// ── 진행 저장 ─────────────────────────────────────────────────────────────
+
+/**
+ * 판을 통째로 적어 둔다. 쏟는 중에는 저장하지 않는다 —
+ * 그 순간의 반쪽짜리 더미를 되살리는 것보다 직전 저장이 낫다.
+ */
+function saveProgress(force = false) {
+  const s = game.session;
+  if (s.state !== 'play' || s.pouring) return;
+  // 무너지는 중에 적으면 되살릴 때 속도를 버리므로 타일이 조금 어긋난다.
+  // 급할 때(탭을 닫을 때)가 아니면 더미가 멈춘 다음에 적는다.
+  if (!force && !s.pile.world.asleep) return;
+  saveRun(serializeSession(s));
+}
+
+/** 저장된 판으로 이어간다. 판 상태가 없으면(레벨 시작 표식) 그 레벨을 새로 연다. */
+function resumeRun(run) {
+  const restored = restoreSession(run);
+  if (restored) useSession(restored);
+  else newSession(run.level || 1, run.total || 0, run.runTime || 0);
+  game.rank = 0;
+  clearParticles();
+  game.floats.length = 0;
+  game.state = 'play';
 }
 
 // ── 루프 ──────────────────────────────────────────────────────────────────
@@ -76,6 +116,13 @@ function step(dt) {
 
   // 일시정지에서만 더미를 멈춘다. 클리어·게임오버 화면 뒤에서는 마저 무너지게 둔다.
   updateSession(game.session, game.state === 'pause' ? 0 : dt);
+
+  // 쏟기가 끝난 순간과, 그 뒤로 더미가 조용할 때 이따금 적어 둔다
+  if (game.state === 'play') {
+    if (game.wasPouring && !game.session.pouring) { game.wasPouring = false; saveProgress(); }
+    game.saveT += dt;
+    if (game.saveT > 6 && game.session.pile.world.asleep) { game.saveT = 0; saveProgress(); }
+  }
   updateParticles(dt);
   for (let i = game.floats.length - 1; i >= 0; i--) {
     game.floats[i].t += dt;
@@ -91,9 +138,17 @@ function globalKeys() {
 }
 
 function stepTitle() {
-  if (consumeRect(game.screenRects.start) || key('Space') || key('Enter')) {
+  const run = loadRun();
+  if (run && (consumeRect(game.screenRects.resume) || key('Enter'))) {
     initAudio();
     sfx('ui');
+    resumeRun(run);
+    return;
+  }
+  if (consumeRect(game.screenRects.start) || key('Space')) {
+    initAudio();
+    sfx('ui');
+    clearRun();
     startRun(1);
   }
 }
@@ -163,6 +218,7 @@ function endRun() {
     s.recorded = true;
     submitRun(s.level, s.total, s.runTime + s.time);
   }
+  clearRun();
 }
 
 function doPower(name) {
@@ -183,6 +239,7 @@ function drainEvents() {
         break;
       case 'match': {
         sfx('match', s.combo);
+        saveProgress();
         const color = SYMBOLS[e.tiles[0].kind].color;
         const fresh = s.popping.slice(-3);
         for (const p of fresh) {
@@ -201,10 +258,14 @@ function drainEvents() {
         break;
       case 'win':
         sfx('win');
+        // 다음 레벨의 시작점만 남긴다. 다 비운 판을 되살릴 수는 없다.
+        saveRun({ level: s.level + 1, total: s.total, runTime: s.runTime + s.time });
         game.state = 'clear';
         break;
       case 'lose':
         sfx('lose');
+        clearRun();          // 진 판을 다시 불러오면 공짜 부활이 된다
+
         game.rank = s.total > 0 ? previewRank(s.total) : 0;
         game.state = 'over';
         break;
@@ -259,7 +320,7 @@ function draw() {
   }
 
   switch (game.state) {
-    case 'title': game.screenRects = titleScreen(ctx, save, game.t); break;
+    case 'title': game.screenRects = titleScreen(ctx, save, game.t, loadRun()); break;
     case 'pause': game.screenRects = pauseScreen(ctx, s); break;
     case 'clear': game.screenRects = clearScreen(ctx, s); break;
     case 'over':  game.screenRects = overScreen(ctx, s, save, game.rank); break;
