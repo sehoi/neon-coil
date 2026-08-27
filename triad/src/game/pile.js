@@ -3,11 +3,11 @@
 // **앞면(무늬)이 보이면 집을 수 있다.** 층 개념이 없으므로 옆으로 삐져나온 타일도,
 // 더미 옆구리에 낀 타일도 무늬만 보이면 집힌다.
 
-import { rnd, shuffle, irange } from '../core/rng.js';
-import { v3, qAxisAngle, qMul, qRandom, axis, len2 } from '../core/v3.js';
+import { rnd, shuffle } from '../core/rng.js';
+import { v3, qAxisAngle, qMul } from '../core/v3.js';
 import { TILE3D, POUR } from '../data/tuning.js';
 import {
-  createWorld, addBody, removeBody, step as stepWorld, raycast, wake, wakeAll, freeze,
+  createWorld, addBody, removeBody, placeBody, step as stepWorld, raycast, freeze,
 } from './physics.js';
 
 const FACE_UP = qAxisAngle(v3(1, 0, 0), -Math.PI / 2);   // 로컬 +z(앞면)가 위를 본다
@@ -33,6 +33,7 @@ export function createPile(spec) {
     world, halfX, halfZ, spec,
     tiles: [],
     kinds,
+    queue: [],          // 다시 쏟기를 기다리는 타일들
     poured: 0,
     frame: 0,
     settleT: 0,
@@ -42,6 +43,14 @@ export function createPile(spec) {
 /** 한 프레임 분량을 쏟는다. 다 쏟았으면 true. */
 export function pourTick(pile) {
   pile.frame++;
+
+  // 섞기로 다시 쏟는 중이면 큐에 든 타일부터 내려놓는다 (처음 쏟는 것과 같은 방식)
+  if (pile.queue.length) {
+    if (pile.frame % POUR.everyFrames !== 0) return false;
+    for (let k = 0; k < POUR.perWave && pile.queue.length; k++) placeTile(pile, pile.queue.shift());
+    return pile.queue.length === 0;
+  }
+
   if (pile.poured >= pile.spec.tiles) return true;
   if (pile.frame % POUR.everyFrames !== 0) return false;
 
@@ -83,6 +92,28 @@ function dropOne(pile) {
   return tile;
 }
 
+/** 이미 있는 타일(몸이 없는 'wait' 상태)을 더미 위에 다시 내려놓는다. */
+function placeTile(pile, tile) {
+  const { halfX, halfZ } = pile;
+  const mx = halfX - 0.8, mz = halfZ - 0.8;
+  let px = 0, pz = 0, best = Infinity;
+  for (let i = 0; i < POUR.spots; i++) {
+    const x = (rnd() * 2 - 1) * mx, z = (rnd() * 2 - 1) * mz;
+    const h = surfaceAt(pile, x, z);
+    if (h < best) { best = h; px = x; pz = z; }
+  }
+  const body = addBody(pile.world, {
+    p: v3(px, best + POUR.height, pz),
+    q: spawnRotation(),
+    hx: TILE3D.hx, hy: TILE3D.hy, hz: TILE3D.hz,
+  });
+  body.v.y = -POUR.speed;
+  body.tile = tile;
+  tile.body = body;
+  tile.state = 'pile';
+  return tile;
+}
+
 function spawnRotation() {
   const yaw = qAxisAngle(v3(0, 1, 0), rnd() * Math.PI * 2);
   const tilt = qAxisAngle(v3(1, 0, 0), (rnd() - 0.5) * POUR.tilt);
@@ -109,7 +140,7 @@ export function stepPile(pile, dt) {
 
   // 다 쏟은 뒤에도 오래 뒤척이면 그냥 세운다. 눈에 안 보이는 미동 때문에
   // 프레임마다 몇 ms 를 계속 쓰는 것이 아깝다.
-  if (pile.poured >= pile.spec.tiles) {
+  if (pile.poured >= pile.spec.tiles && !pile.queue.length) {
     pile.settleT += dt;
     if (pile.settleT > POUR.settleCap) freeze(pile.world);
   }
@@ -143,19 +174,30 @@ export function liftTile(pile, tile) {
   return at;
 }
 
-/** 트레이의 타일을 더미 위로 되돌린다 (되돌리기 · 빼내기). */
-export function dropBack(pile, tiles) {
+/**
+ * 트레이의 타일을 더미로 되돌린다.
+ * @param toss true 면 원래 자리가 아니라 **아무 데나** 던져 넣는다. 도로 집으면
+ *             그만인 되돌리기를 대가 있는 선택으로 만드는 것이 목적이다 —
+ *             어디에 떨어져 무엇을 무너뜨릴지는 던져 봐야 안다.
+ */
+export function dropBack(pile, tiles, { toss = false } = {}) {
   const out = [];
   for (const tile of tiles) {
-    const near = tile.lastTransform;
-    const px = clamp(near ? near.p.x : 0, -pile.halfX + 0.8, pile.halfX - 0.8);
-    const pz = clamp(near ? near.p.z : 0, -pile.halfZ + 0.8, pile.halfZ - 0.8);
+    const near = toss ? null : tile.lastTransform;
+    const mx = pile.halfX - 0.8, mz = pile.halfZ - 0.8;
+    const px = near ? clamp(near.p.x, -mx, mx) : (rnd() * 2 - 1) * mx;
+    const pz = near ? clamp(near.p.z, -mz, mz) : (rnd() * 2 - 1) * mz;
     const body = addBody(pile.world, {
-      p: v3(px, surfaceAt(pile, px, pz) + 0.9, pz),
+      p: v3(px, surfaceAt(pile, px, pz) + (toss ? 1.8 : 0.9), pz),
       q: spawnRotation(),
       hx: TILE3D.hx, hy: TILE3D.hy, hz: TILE3D.hz,
     });
     body.v.y = -1.5;
+    if (toss) {
+      body.v.x = (rnd() - 0.5) * 2.4;
+      body.v.z = (rnd() - 0.5) * 2.4;
+      body.w.x = (rnd() - 0.5) * 5; body.w.y = (rnd() - 0.5) * 5; body.w.z = (rnd() - 0.5) * 5;
+    }
     body.tile = tile;
     tile.body = body;
     tile.state = 'pile';
@@ -166,68 +208,75 @@ export function dropBack(pile, tiles) {
   return out;
 }
 
-/** 섞기 — 남은 타일을 전부 들어 올렸다가 다시 쏟는다. */
+/**
+ * 섞기 — 판을 통째로 걷어내고 **처음 세팅 때와 똑같이** 다시 쏟는다.
+ * 한 번에 들었다 놓으면 원래 모양이 어렴풋이 남는다. 큐에 넣어 한 장씩
+ * 내려놓아야 진짜로 새 판이 된다.
+ * @returns {number} 다시 쏟을 장수
+ */
 export function retoss(pile) {
   const live = pile.tiles.filter(t => t.state === 'pile');
-  live.forEach((tile, i) => {
-    const b = tile.body;
-    b.p.x = (rnd() * 2 - 1) * (pile.halfX - 0.8);
-    b.p.z = (rnd() * 2 - 1) * (pile.halfZ - 0.8);
-    b.p.y = 1.6 + (i % 6) * 0.55 + rnd() * 0.3;
-    b.q = spawnRotation();
-    b.v.x = (rnd() - 0.5) * 1.2; b.v.y = -1; b.v.z = (rnd() - 0.5) * 1.2;
-    b.w.x = (rnd() - 0.5) * 2.5; b.w.y = (rnd() - 0.5) * 2.5; b.w.z = (rnd() - 0.5) * 2.5;
-    wake(b);
-    b.sleepT = 0;
-  });
-  pile.world.asleep = false;
+  for (const tile of live) {
+    removeBody(pile.world, tile.body);
+    tile.body = null;
+    tile.state = 'wait';          // 몸이 없는 동안 — 그리지도, 맞히지도 않는다
+  }
+  shuffle(live);
+  pile.queue = live;
+  pile.frame = 0;
   pile.settleT = 0;
+  pile.world.asleep = false;
   return live.length;
 }
 
 /**
- * 뒤집기 — 위가 트인 엎어진 타일을 **전부** 뒤집는다.
+ * 정렬 — 남은 타일을 격자로 늘어놓고 **전부 앞면이 위를 보게** 한다.
  *
- * 엎어진 타일은 집을 수 없으니 계속 남는다. 즉 판이 진행될수록 엎어진 것만
- * 쌓여 나중에는 손댈 것이 없어진다. 그래서 이 도구는 몇 장씩 찔끔 뒤집는 게
- * 아니라 표면을 통째로 뒤집는다 — 이게 이 게임의 핵심 도구다.
- * (더미 속에 낀 것은 못 뒤집는다. 뒤집으면 이웃을 뚫고 들어간다.)
- * @returns {number} 뒤집은 장수
+ * 뒤집기가 표면 몇 장만 뒤집던 시절에는 판이 진행될수록 엎어진 것만 쌓였다.
+ * 이제는 판을 통째로 정리한다 — 한 판에 몇 번 없는 "다 보이는 순간"이고,
+ * 그래서 값이 비싸다. 한 겹에 다 못 놓으면 그 위로 겹을 올린다.
+ * @returns {number} 정렬한 장수
  */
-export function flipDown(pile, limit = 40) {
-  const cands = [];
-  for (const tile of pile.tiles) {
-    if (tile.state !== 'pile') continue;
-    // 엎어진 것뿐 아니라 '모로 선' 것도 대상이다. 옆으로 선 타일은 무늬가
-    // 위를 보지 않아 집을 수 없는데, 뒤집기까지 건너뛰면 영영 굳어 버린다.
-    if (axis(tile.body.R, 2).y > 0.3) continue;
-    const above = raycast(pile.world, v3(tile.body.p.x, 16, tile.body.p.z), v3(0, -1, 0));
-    if (!above || above.body !== tile.body) continue;      // 위에 뭔가 덮여 있다
-    cands.push(tile);
-  }
-  cands.sort((a, b) => b.body.p.y - a.body.p.y);
+export function alignAll(pile) {
+  const live = pile.tiles.filter(t => t.state === 'pile');
+  if (!live.length) return 0;
 
-  const flipped = cands.slice(0, limit);
-  for (const tile of flipped) {
-    const b = tile.body;
-    b.q = qMul(faceUpDelta(axis(b.R, 2)), b.q);
-    b.p.y += 0.34;
-    b.v.x = 0; b.v.y = 0.3; b.v.z = 0;
-    b.w.x = 0; b.w.y = 0; b.w.z = 0;
-    wake(b);
-    b.sleepT = 0;
-  }
-  if (flipped.length) { pile.world.asleep = false; pile.settleT = 0; }
-  return flipped.length;
+  const cw = TILE3D.hx * 2 + 0.06, ch = TILE3D.hy * 2 + 0.06;
+  const cols = Math.max(1, Math.floor((pile.halfX * 2 - 0.1) / cw));
+  const rows = Math.max(1, Math.floor((pile.halfZ * 2 - 0.1) / ch));
+  const layers = Math.max(1, Math.ceil(live.length / (cols * rows)));
+  const per = Math.ceil(live.length / layers);          // 겹마다 고르게 나눈다
+  const x0 = -(cols * cw) / 2 + cw / 2;
+  const z0 = -(rows * ch) / 2 + ch / 2;
+
+  // 홀수 겹은 반 칸 밀어 얹는다. 정확히 포개면 아래 겹이 한 장도 안 보인다.
+  // 다만 남은 여백보다 더 밀면 벽을 뚫으므로 여백만큼만 민다.
+  const offX = Math.min(0.5, (pile.halfX * 2 - cols * cw) / (2 * cw));
+  const offZ = Math.min(0.5, (pile.halfZ * 2 - rows * ch) / (2 * ch));
+
+  live.forEach((tile, i) => {
+    const layer = Math.floor(i / per);
+    const j = i % per;
+    const odd = layer % 2;
+    placeBody(tile.body, {
+      x: x0 + ((j % cols) + odd * offX) * cw,
+      z: z0 + (Math.floor(j / cols) + odd * offZ) * ch,
+      y: TILE3D.hz + layer * (TILE3D.hz * 2 + 0.004),
+    }, FACE_UP);
+  });
+  // 자리를 정확히 잡아 놓았으므로 다시 굴릴 것이 없다. 그대로 재운다 —
+  // 한 장을 집으면 그 둘레만 깨어나 위 칸이 내려앉는다.
+  freeze(pile.world);
+  pile.settleT = 0;
+  return live.length;
 }
 
-/** 지금 앞면이 향한 방향 n 을 위(+y)로 돌리는 회전. */
-function faceUpDelta(n) {
-  const d = n.y;
-  if (d > 0.9999) return { x: 0, y: 0, z: 0, w: 1 };
-  if (d < -0.9999) return qAxisAngle(v3(1, 0, 0), Math.PI);
-  const axisV = { x: n.z, y: 0, z: -n.x };          // cross(n, +y)
-  return qAxisAngle(axisV, Math.acos(Math.max(-1, Math.min(1, d))));
+/** 무늬가 kind 인 타일을 위에 있는 것부터 n 장 고른다 (빼내기). */
+export function topOfKind(pile, kind, n) {
+  return pile.tiles
+    .filter(t => t.state === 'pile' && t.kind === kind)
+    .sort((a, b) => b.body.p.y - a.body.p.y)
+    .slice(0, n);
 }
 
 // ── 조회 ──────────────────────────────────────────────────────────────────
@@ -291,10 +340,14 @@ const R4 = (v) => Math.round(v * 1e4) / 1e4;   // 소수 넷째 자리면 눈으
 /** 더미를 그대로 적어 둔다. 타일마다 무늬·상태와, 판 위에 있으면 위치·자세. */
 export function serializePile(pile) {
   return pile.tiles.map((t) => {
-    const row = [t.kind, t.state === 'pile' ? 0 : t.state === 'tray' ? 1 : 2];
-    if (t.state === 'pile') {
+    const inPile = t.state !== 'tray' && t.state !== 'gone';
+    const row = [t.kind, inPile ? 0 : t.state === 'tray' ? 1 : 2];
+    if (inPile) {
+      // 다시 쏟기를 기다리는 중(몸 없음)이면 위에서 떨어뜨리는 것으로 적는다.
+      // 쏟는 동안에는 저장하지 않으므로 실제로는 거의 오지 않는 길이다.
       const b = t.body;
-      row.push(R4(b.p.x), R4(b.p.y), R4(b.p.z), R4(b.q.x), R4(b.q.y), R4(b.q.z), R4(b.q.w));
+      if (b) row.push(R4(b.p.x), R4(b.p.y), R4(b.p.z), R4(b.q.x), R4(b.q.y), R4(b.q.z), R4(b.q.w));
+      else row.push(0, 4, 0, 0, 0, 0, 1);
     }
     return row;
   });

@@ -6,7 +6,7 @@
 
 import { seed } from '../src/core/rng.js';
 import { LAYOUT } from '../src/config.js';
-import { levelSpec, TRAY_CAP } from '../src/data/tuning.js';
+import { levelSpec, startingItems, clearReward, TRAY_CAP } from '../src/data/tuning.js';
 import {
   createSession, update, pickTile,
   useFlip, useWithdraw, useShuffle,
@@ -20,8 +20,21 @@ const DT = 1 / 60;
 
 function makeCam(pile) {
   const cam = createCamera(LAYOUT.board);
-  frameBox(cam, pile.halfX, pile.halfZ, 1.8, 1.12);
+  frameBox(cam, pile.halfX, pile.halfZ, 2.8, Math.PI / 2);   // main.js 와 같은 시점
   return cam;
+}
+
+/**
+ * 이 레벨에 들어설 때 손에 있을 아이템 — 아무것도 안 사고 클리어 보상만 받은 경우다.
+ * 골드로 더 살 수 있으니 이게 바닥값이고, 봇은 그 바닥에서 둔다.
+ */
+function stockFor(level) {
+  const items = startingItems();
+  for (let L = 1; L < level; L++) {
+    const set = clearReward(L);
+    for (const k of Object.keys(items)) items[k] += set[k] | 0;
+  }
+  return items;
 }
 
 function settle(session, seconds) {
@@ -52,7 +65,7 @@ function clickable(session, cam) {
 /** 사람처럼 두는 봇: 짝을 맞출 수 있으면 맞추고, 아니면 여럿 보이는 무늬를 모은다. */
 function play(level, s) {
   seed(s);
-  const session = createSession(level);
+  const session = createSession(level, 0, 0, stockFor(level));
   const cam = makeCam(session.pile);
   settle(session, 12);
 
@@ -99,17 +112,18 @@ function play(level, s) {
   return session;
 }
 
-console.log('레벨  타일  무늬 |  클리어  평균 집기  눈감고 집기  손 못 댐');
+console.log('레벨  타일  무늬 |  클리어  평균 집기  눈감고 집기  쓴 아이템  손 못 댐');
 let ok = true;
 for (let lv = 1; lv <= LEVELS; lv++) {
   const spec = levelSpec(lv);
-  let wins = 0, picks = 0, blocked = 0, stuck = 0;
+  let wins = 0, picks = 0, blocked = 0, stuck = 0, used = 0;
   for (let r = 0; r < RUNS; r++) {
     const s = play(lv, lv * 7919 + r * 104729);
     if (s.state === 'won') wins++;
     if (s.state === 'play') stuck++;          // 봇이 손을 못 댄 판
     picks += s.stats.picks;
     blocked += s.stats.blind;
+    used += s.stats.powers + s.stats.undos;
   }
   if (stuck) ok = false;
   console.log(
@@ -117,6 +131,7 @@ for (let lv = 1; lv <= LEVELS; lv++) {
     ' | ' + String((wins / RUNS * 100).toFixed(0) + '%').padStart(7) +
     String((picks / RUNS).toFixed(0)).padStart(10) +
     String((blocked / RUNS).toFixed(1)).padStart(12) +
-    String(stuck).padStart(6));
+    String((used / RUNS).toFixed(1)).padStart(10) +
+    String(stuck).padStart(7));
 }
 console.log(ok ? '\n막힌 판 없음 — 봇이 모든 판을 끝까지 뒀다.' : '\n주의: 봇이 손을 못 댄 판이 있다.');

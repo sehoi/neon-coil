@@ -4,6 +4,7 @@ import { W, H, LAYOUT, SETTINGS, IS_TOUCH, fitCanvas } from './config.js';
 import { seed } from './core/rng.js';
 import { initAudio, sfx } from './core/audio.js';
 import { loadSave, getSave, submitRun, previewRank, persist, saveRun, loadRun, clearRun } from './core/save.js';
+import { ITEMS, grantClear, buyItem, claimFree } from './game/wallet.js';
 import { attachInput, input, consumeRect, takeTap, key, endFrame, pointInRect } from './core/input.js';
 import { SYMBOLS } from './data/symbols.js';
 import {
@@ -17,6 +18,7 @@ import { drawBackground, drawTrayTiles, drawComboFloat, trayBurstPoint } from '.
 import { burst, updateParticles, clearParticles } from './render/particles.js';
 import { drawHud, drawTray, drawPowers } from './ui/hud.js';
 import { titleScreen, pauseScreen, clearScreen, overScreen } from './ui/screens.js';
+import { shopScreen, ITEM_NAME } from './ui/shop.js';
 import { BTN, POWERS } from './ui/rects.js';
 
 const canvas = document.getElementById('game');
@@ -25,7 +27,7 @@ const ctx = canvas.getContext('2d', { alpha: false });
 const save = loadSave();
 
 const game = {
-  state: 'title',                 // title | play | pause | clear | over
+  state: 'title',                 // title | play | pause | clear | over | shop
   session: null,
   cam: createCamera(LAYOUT.board),
   floats: [],
@@ -34,7 +36,10 @@ const game = {
   screenRects: {},
   hot: null,
   saveT: 0,
-  wasPouring: true,                      // 마우스가 올라간 타일
+  wasPouring: true,
+  shopFrom: 'title',                     // 상점을 닫으면 돌아갈 화면
+  shopNote: null,                        // 방금 사거나 받은 것 한 줄
+  shopNoteT: 0,
 };
 
 seed((Date.now() ^ 0x9e3779b9) >>> 0);
@@ -50,7 +55,8 @@ for (const ev of ['pagehide', 'visibilitychange']) {
 }
 
 function newSession(level, total = 0, runTime = 0) {
-  useSession(createSession(level, total, runTime));
+  // 아이템은 지갑을 그대로 넘긴다 — 세션이 쓰면 지갑에서 바로 빠진다.
+  useSession(createSession(level, total, runTime, save.wallet.items));
 }
 
 function useSession(session) {
@@ -79,7 +85,7 @@ function saveProgress(force = false) {
 
 /** 저장된 판으로 이어간다. 판 상태가 없으면(레벨 시작 표식) 그 레벨을 새로 연다. */
 function resumeRun(run) {
-  const restored = restoreSession(run);
+  const restored = restoreSession(run, save.wallet.items);
   if (restored) useSession(restored);
   else newSession(run.level || 1, run.total || 0, run.runTime || 0);
   game.rank = 0;
@@ -113,10 +119,16 @@ function step(dt) {
     case 'pause':  stepPause(); break;
     case 'clear':  stepClear(); break;
     case 'over':   stepOver(); break;
+    case 'shop':   stepShop(); break;
+  }
+
+  if (game.shopNote) {
+    game.shopNoteT += dt;
+    if (game.shopNoteT > 2.4) game.shopNote = null;
   }
 
   // 일시정지에서만 더미를 멈춘다. 클리어·게임오버 화면 뒤에서는 마저 무너지게 둔다.
-  updateSession(game.session, game.state === 'pause' ? 0 : dt);
+  updateSession(game.session, (game.state === 'pause' || game.state === 'shop') ? 0 : dt);
 
   // 쏟기가 끝난 순간과, 그 뒤로 더미가 조용할 때 이따금 적어 둔다
   if (game.state === 'play') {
@@ -151,7 +163,50 @@ function stepTitle() {
     sfx('ui');
     clearRun();
     startRun(1);
+    return;
   }
+  if (consumeRect(game.screenRects.shop)) { initAudio(); openShop('title'); }
+}
+
+// ── 상점 ──────────────────────────────────────────────────────────────────
+
+function openShop(from) {
+  sfx('ui');
+  game.shopFrom = from;
+  game.shopNote = null;
+  game.state = 'shop';
+}
+
+function stepShop() {
+  const r = game.screenRects;
+  if (consumeRect(r.close) || key('Escape')) {
+    sfx('ui');
+    game.state = game.shopFrom;
+    return;
+  }
+  if (consumeRect(r.free)) {
+    const got = claimFree(save.wallet);
+    if (got) {
+      persist();
+      sfx('win');
+      note(`${ITEM_NAME[got]}를 받았다`);
+    } else sfx('blocked');
+    return;
+  }
+  for (const name of ITEMS) {
+    if (!consumeRect(r.buy && r.buy[name])) continue;
+    if (buyItem(save.wallet, name)) {
+      persist();
+      sfx('power');
+      note(`${ITEM_NAME[name]}를 샀다`);
+    } else sfx('blocked');
+    return;
+  }
+}
+
+function note(msg) {
+  game.shopNote = msg;
+  game.shopNoteT = 0;
 }
 
 function stepPlay() {
@@ -179,11 +234,13 @@ function stepPlay() {
 function stepPause() {
   const r = game.screenRects;
   if (consumeRect(r.resume) || key('Escape') || key('KeyP')) { game.state = 'play'; sfx('ui'); }
+  else if (consumeRect(r.shop)) { openShop('pause'); }
   else if (consumeRect(r.restart)) { sfx('ui'); startRun(game.session.level); }
   else if (consumeRect(r.quit)) { sfx('ui'); endRun(); game.state = 'title'; }
 }
 
 function stepClear() {
+  if (consumeRect(game.screenRects.shop)) { openShop('clear'); return; }
   if (consumeRect(game.screenRects.next) || key('Space') || key('Enter')) {
     sfx('ui');
     const s = game.session;
@@ -196,8 +253,9 @@ function stepClear() {
 function stepOver() {
   const r = game.screenRects;
   if (r.revive && consumeRect(r.revive)) {
-    if (revive(game.session)) { game.state = 'play'; return; }
+    if (revive(game.session)) { persist(); game.state = 'play'; return; }
   }
+  if (consumeRect(r.shop)) { openShop('over'); return; }
   if (consumeRect(r.again)) { sfx('ui'); endRun(); startRun(game.session.level); }
   else if (consumeRect(r.quit)) { sfx('ui'); endRun(); game.state = 'title'; }
 }
@@ -228,7 +286,9 @@ function doPower(name) {
     : name === 'withdraw' ? useWithdraw(s)
     : name === 'flip' ? useFlip(s)
     : useShuffle(s);
-  if (!ok) sfx('blocked');
+  if (!ok) { sfx('blocked'); return; }
+  // 섞기는 판을 처음부터 다시 쏟는다. 다 쏟은 순간에 다시 적어야 한다.
+  if (name === 'shuffle') game.wasPouring = true;
 }
 
 function drainEvents() {
@@ -256,9 +316,12 @@ function drainEvents() {
       }
       case 'power':
         sfx(e.name === 'undo' ? 'undo' : 'power');
+        persist();                 // 아이템이 지갑에서 빠졌다
         break;
       case 'win':
         sfx('win');
+        // 이 판의 점수가 골드가 되고, 클리어 세트가 얹힌다
+        s.reward = grantClear(save.wallet, s.level, s.score);
         // 다음 레벨의 시작점만 남긴다. 다 비운 판을 되살릴 수는 없다.
         saveRun({ level: s.level + 1, total: s.total, runTime: s.runTime + s.time });
         game.state = 'clear';
@@ -311,7 +374,7 @@ function draw() {
   drawPile(ctx, game.cam, s.pile.tiles, game.hot);
   ctx.restore();
 
-  if (game.state !== 'title') {
+  if (game.state !== 'title' && game.state !== 'shop') {
     drawTray(ctx, s);
     drawTrayTiles(ctx, s, game.cam);
     drawComboFloat(ctx, game.floats);
@@ -325,6 +388,7 @@ function draw() {
     case 'pause': game.screenRects = pauseScreen(ctx, s); break;
     case 'clear': game.screenRects = clearScreen(ctx, s); break;
     case 'over':  game.screenRects = overScreen(ctx, s, save, game.rank); break;
+    case 'shop':  game.screenRects = shopScreen(ctx, save.wallet, game.t, game.shopNote); break;
     default:      game.screenRects = {};
   }
 }
