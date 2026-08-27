@@ -1,58 +1,68 @@
-// 판·트레이 그리기. 상태를 바꾸지 않는다 — 애니메이션 시간은 session 이 갖고 있고
-// 여기서는 그 시간으로 위치만 보간한다.
+// 2D 층 — 배경, 트레이 타일, 점수 뜨기. 더미(3D)는 pile3d.js 가 그린다.
 
-import { W, H, LAYOUT, SETTINGS } from '../config.js';
-import { ANIM, TILE } from '../data/tuning.js';
-import { SYMBOLS } from '../data/symbols.js';
+import { W, H, SETTINGS } from '../config.js';
+import { ANIM } from '../data/tuning.js';
 import { drawTile } from './tiles.js';
-import { boardView, rectOf, tileRect, drawOrder, trayTileRect } from './geom.js';
+import { trayTileRect } from './geom.js';
 import { drawParticles } from './particles.js';
+import { projectPoint } from './camera.js';
 
-export function drawBackground(ctx, t) {
-  const g = ctx.createRadialGradient(W / 2, H * 0.42, 60, W / 2, H * 0.5, H * 0.78);
-  g.addColorStop(0, '#14203a');
-  g.addColorStop(1, '#05060d');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, W, H);
+let bgCache = null;
 
-  // 옅은 격자 — 배경이 완전히 비면 타일이 떠 있는 느낌이 안 난다
+/**
+ * 배경은 한 번 그려 두고 매 프레임 복사한다.
+ * 전면 그라디언트를 프레임마다 다시 칠하면 그것만으로 저사양 기기에서
+ * 프레임을 다 먹는다 (실측: 캔버스 1440×2560 에서 15ms 이상).
+ */
+export function drawBackground(ctx) {
+  const dw = ctx.canvas.width, dh = ctx.canvas.height;
+  if (!bgCache || bgCache.width !== dw || bgCache.height !== dh) {
+    bgCache = document.createElement('canvas');
+    bgCache.width = dw;
+    bgCache.height = dh;
+    const c = bgCache.getContext('2d');
+    c.setTransform(dw / W, 0, 0, dh / H, 0, 0);
+
+    const g = c.createRadialGradient(W / 2, H * 0.38, 60, W / 2, H * 0.5, H * 0.8);
+    g.addColorStop(0, '#12203a');
+    g.addColorStop(1, '#05060d');
+    c.fillStyle = g;
+    c.fillRect(0, 0, W, H);
+
+    c.globalAlpha = 0.05;
+    c.strokeStyle = '#9bb0ff';
+    c.lineWidth = 1;
+    c.beginPath();
+    for (let x = 0; x < W; x += 80) { c.moveTo(x, 0); c.lineTo(x, H); }
+    for (let y = 0; y < H; y += 80) { c.moveTo(0, y); c.lineTo(W, y); }
+    c.stroke();
+  }
   ctx.save();
-  ctx.globalAlpha = 0.06;
-  ctx.strokeStyle = '#9bb0ff';
-  ctx.lineWidth = 1;
-  const step = 80;
-  const drift = (t * 8) % step;
-  ctx.beginPath();
-  for (let x = -step + drift; x < W + step; x += step) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
-  for (let y = -step + drift; y < H + step; y += step) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
-  ctx.stroke();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(bgCache, 0, 0);
   ctx.restore();
 }
 
-export function drawBoard(ctx, session, view, hoverTile) {
-  for (const tile of drawOrder(session.board)) {
-    const r = rectOf(view, tile);
-    drawTile(ctx, r, tile.kind, {
-      covered: tile.blockedBy > 0,
-      selected: tile === hoverTile && tile.blockedBy === 0,
-      shake: tile.shake || 0,
-    });
-  }
-}
-
-export function drawTrayTiles(ctx, session, view) {
+/**
+ * 트레이에 놓인 타일. 방금 집은 것은 더미에서 뽑힌 자리(3D)에서 날아온다 —
+ * 그 자리를 월드 좌표로 들고 있다가 매 프레임 다시 투영하므로,
+ * 더미가 무너져 화면이 흔들려도 출발점이 어긋나지 않는다.
+ */
+export function drawTrayTiles(ctx, session, cam) {
   session.tray.forEach((tile, i) => {
     const dest = trayTileRect(i);
     let r = dest;
-    if (tile.anim) {
-      const k = easeOut(Math.min(1, tile.anim.t / tile.anim.dur));
-      const from = tileRect(view, tile.anim.from.cx, tile.anim.from.cy, tile.anim.from.layer);
-      r = {
-        x: from.x + (dest.x - from.x) * k,
-        y: from.y + (dest.y - from.y) * k - Math.sin(k * Math.PI) * 46,
-        w: from.w + (dest.w - from.w) * k,
-        h: from.h + (dest.h - from.h) * k,
-      };
+    if (tile.anim && tile.pickedAt) {
+      const from = projectPoint(cam, tile.pickedAt, {});
+      if (from) {
+        const k = easeOut(Math.min(1, tile.anim.t / tile.anim.dur));
+        const w = dest.w * (0.55 + 0.45 * k), h = dest.h * (0.55 + 0.45 * k);
+        r = {
+          x: (from.x - w / 2) + (dest.x - (from.x - w / 2)) * k,
+          y: (from.y - h / 2) + (dest.y - (from.y - h / 2)) * k - Math.sin(k * Math.PI) * 40,
+          w, h,
+        };
+      }
     }
     drawTile(ctx, r, tile.kind, {});
   });
@@ -84,8 +94,6 @@ export function drawComboFloat(ctx, floats) {
     ctx.restore();
   }
 }
-
-export { boardView };
 
 function easeOut(k) {
   return 1 - Math.pow(1 - k, 3);

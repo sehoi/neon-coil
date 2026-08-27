@@ -2,16 +2,17 @@
 
 import { W, LAYOUT, SETTINGS, IS_TOUCH } from '../config.js';
 import { TRAY_CAP } from '../data/tuning.js';
+import { remaining } from '../game/pile.js';
 import { text, button, roundRect, fmtTime } from './widgets.js';
 import { BTN, POWERS, powerRects } from './rects.js';
 import { drawIcon, drawGlyph } from './icons.js';
 import { drawSlot } from '../render/tiles.js';
 import { traySlot } from '../render/geom.js';
 
-const POWER_LABEL = { undo: '되돌리기', withdraw: '빼내기', shuffle: '섞기' };
-const POWER_HINT  = { undo: '한 장 취소', withdraw: '3장 꺼내기', shuffle: '무늬 섞기' };
-const POWER_KEY   = { undo: 'Z', withdraw: 'X', shuffle: 'C' };
-const POWER_COLOR = { undo: '#9bb0ff', withdraw: '#ffd166', shuffle: '#46f0d0' };
+const POWER_LABEL = { undo: '되돌리기', withdraw: '빼내기', flip: '뒤집기', shuffle: '섞기' };
+const POWER_HINT  = { undo: '한 장 취소', withdraw: '3장 꺼내기', flip: '엎어진 것', shuffle: '다시 쏟기' };
+const POWER_KEY   = { undo: 'Z', withdraw: 'X', flip: 'V', shuffle: 'C' };
+const POWER_COLOR = { undo: '#9bb0ff', withdraw: '#ffd166', flip: '#ff6bd6', shuffle: '#46f0d0' };
 
 export function drawHud(ctx, session, best) {
   // 배경 띠
@@ -29,7 +30,7 @@ export function drawHud(ctx, session, best) {
 
   const stats = [
     ['점수', String(session.total)],
-    ['남은', String(session.board.remaining)],
+    ['남은', String(remaining(session.pile))],
     ['시간', fmtTime(session.time)],
   ];
   stats.forEach(([k, v], i) => {
@@ -99,13 +100,13 @@ export function drawPowers(ctx, session, hover) {
       label: '', sub: '', accent: POWER_COLOR[name], disabled: !usable,
       badge: n, active: hover === name,
     });
-    drawIcon(ctx, name, r.x + r.w / 2, r.y + 44, 22, usable ? POWER_COLOR[name] : '#8b93aa');
-    text(ctx, POWER_LABEL[name], r.x + r.w / 2, r.y + 88, {
-      size: 22, color: usable ? '#f2f5ff' : 'rgba(200,208,228,0.5)', align: 'center', weight: '700',
+    drawIcon(ctx, name, r.x + r.w / 2, r.y + 42, 20, usable ? POWER_COLOR[name] : '#8b93aa');
+    text(ctx, POWER_LABEL[name], r.x + r.w / 2, r.y + 84, {
+      size: 20, color: usable ? '#f2f5ff' : 'rgba(200,208,228,0.5)', align: 'center', weight: '700',
     });
-    const hint = POWER_HINT[name] + (IS_TOUCH ? '' : `  [${POWER_KEY[name]}]`);
-    text(ctx, hint, r.x + r.w / 2, r.y + 112, {
-      size: 15, color: 'rgba(200,208,228,0.5)', align: 'center', weight: '500',
+    const hint = POWER_HINT[name] + (IS_TOUCH ? '' : ` [${POWER_KEY[name]}]`);
+    text(ctx, hint, r.x + r.w / 2, r.y + 108, {
+      size: 13, color: 'rgba(200,208,228,0.5)', align: 'center', weight: '500',
     });
   }
   return rects;

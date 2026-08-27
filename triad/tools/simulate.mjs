@@ -1,108 +1,114 @@
-// 판 생성기 검증 — 브라우저 없이 순수 로직만 돌린다.
-//   node triad/tools/simulate.mjs [레벨수] [판수]
+// 게임플레이 검증 — 브라우저 없이 봇이 실제로 판을 푼다.
+//   node triad/tools/simulate.mjs [최대레벨] [판수]
 //
-// 1) 정답 순서대로 집으면 반드시 클리어되는가 (생성기의 보장)
-// 2) 사람처럼 두는 그리디 전략의 클리어율 — 난이도 곡선을 눈으로 보려고
+// 게임 로직도 물리도 카메라도 DOM 을 모르므로 node 에서 그대로 돌아간다.
+// "보이는 타일"은 진짜로 카메라에서 광선을 쏘아 정한다 — 브라우저와 같은 판정이다.
 
 import { seed } from '../src/core/rng.js';
+import { LAYOUT } from '../src/config.js';
 import { levelSpec, TRAY_CAP } from '../src/data/tuning.js';
-import { createSession, pickTile, useShuffle } from '../src/game/session.js';
-import { isFree } from '../src/game/board.js';
+import {
+  createSession, update, pickTile, rescueFlip,
+  useFlip, useWithdraw, useShuffle,
+} from '../src/game/session.js';
+import { visibleFront, remaining } from '../src/game/pile.js';
+import { createCamera, frameBox, screenRay, projectPoint } from '../src/render/camera.js';
 
-const LEVELS = Number(process.argv[2]) || 20;
-const RUNS = Number(process.argv[3]) || 40;
+const LEVELS = Number(process.argv[2]) || 12;
+const RUNS = Number(process.argv[3]) || 6;
+const DT = 1 / 60;
 
-function playSolution(level, s) {
-  seed(s);
-  const ses = createSession(level);
-  const byId = new Map(ses.board.tiles.map(t => [t.id, t]));
-  for (const id of ses.board.solution) {
-    if (ses.state !== 'play') break;
-    pickTile(ses, byId.get(id));
-  }
-  return ses;
+function makeCam(pile) {
+  const cam = createCamera(LAYOUT.board);
+  frameBox(cam, pile.halfX, pile.halfZ, 1.8, 1.12);
+  return cam;
 }
 
-function playGreedy(level, s) {
+function settle(session, seconds) {
+  for (let i = 0; i < seconds * 60; i++) {
+    update(session, DT);
+    if (!session.pouring && session.pile.world.asleep) return true;
+  }
+  return false;
+}
+
+function visible(session, cam) {
+  return visibleFront(
+    session.pile,
+    { projectPoint: (p) => projectPoint(cam, p, {}) },
+    (x, y) => screenRay(cam, x, y),
+  );
+}
+
+/** 사람처럼 두는 봇: 짝을 맞출 수 있으면 맞추고, 아니면 여럿 보이는 무늬를 모은다. */
+function play(level, s) {
   seed(s);
-  const ses = createSession(level);
-  let guard = 4000;
-  while (ses.state === 'play' && guard-- > 0) {
-    const free = ses.board.tiles.filter(isFree);
-    if (!free.length) break;
+  const session = createSession(level);
+  const cam = makeCam(session.pile);
+  settle(session, 12);
 
-    const trayCount = new Map();
-    for (const t of ses.tray) trayCount.set(t.kind, (trayCount.get(t.kind) || 0) + 1);
-    const freeCount = new Map();
-    for (const t of free) freeCount.set(t.kind, (freeCount.get(t.kind) || 0) + 1);
-
-    // 1) 트레이의 짝을 완성할 수 있으면 그것부터  2) 자유 타일 중 같은 무늬가 많은 것
-    let best = null, bestScore = -1e9;
-    for (const t of free) {
-      const inTray = trayCount.get(t.kind) || 0;
-      const inFree = freeCount.get(t.kind) || 0;
-      let sc = 0;
-      if (inTray + inFree >= 3 && inTray > 0) sc = 100 + inTray * 10;
-      else if (inFree >= 3) sc = 50;
-      else sc = inTray * 5 + inFree - (ses.tray.length >= TRAY_CAP - 2 ? 40 : 0);
-      if (sc > bestScore) { bestScore = sc; best = t; }
+  let guard = 600;
+  while (session.state === 'play' && guard-- > 0) {
+    let vis = visible(session, cam);
+    if (!vis.length) {
+      // 남은 것이 전부 엎어진 경우 — 게임과 똑같이 구제한다
+      if (rescueFlip(session)) { settle(session, 3); continue; }
+      settle(session, 2);
+      vis = visible(session, cam);
+      if (!vis.length) break;
     }
-    pickTile(ses, best);
+
+    const tray = new Map();
+    for (const t of session.tray) tray.set(t.kind, (tray.get(t.kind) || 0) + 1);
+    const seen = new Map();
+    for (const t of vis) {
+      if (!seen.has(t.kind)) seen.set(t.kind, []);
+      seen.get(t.kind).push(t);
+    }
+
+    // 사람이라면 몰릴 때 도구를 쓴다. 봇도 같은 순서로 쓴다.
+    const canComplete = [...seen].some(([kind, g]) => (tray.get(kind) || 0) + g.length >= 3);
+    if (session.tray.length >= TRAY_CAP - 2 && !canComplete) {
+      if (useFlip(session)) { settle(session, 2); continue; }
+      if (useWithdraw(session)) { settle(session, 2); continue; }
+      if (useShuffle(session)) { settle(session, 3); continue; }
+    }
+
+    let best = null, bestScore = -1e9;
+    for (const [kind, group] of seen) {
+      const inTray = tray.get(kind) || 0;
+      let sc;
+      if (inTray + group.length >= 3 && inTray > 0) sc = 200 + inTray * 20;   // 짝을 완성한다
+      else if (group.length >= 3) sc = 120;                                   // 셋이 다 보인다
+      else sc = group.length * 8 + inTray * 6 - (session.tray.length >= TRAY_CAP - 2 ? 60 : 0);
+      if (sc > bestScore) { bestScore = sc; best = group[0]; }
+    }
+    if (!best) break;
+
+    pickTile(session, best, true);
+    settle(session, 1.2);            // 무너지는 것을 기다린다
   }
-  return ses;
+  return session;
 }
 
-let allSolved = true;
-console.log('레벨  타일  층  무늬 | 정답순서 | 그리디 클리어율  평균 시도');
+console.log('레벨  타일  무늬 |  클리어  평균 집기  평균 되돌림  막힘');
+let ok = true;
 for (let lv = 1; lv <= LEVELS; lv++) {
   const spec = levelSpec(lv);
-  let solved = 0, greedyWins = 0, picks = 0;
+  let wins = 0, picks = 0, blocked = 0, stuck = 0;
   for (let r = 0; r < RUNS; r++) {
-    const s = lv * 7919 + r * 104729;
-    const a = playSolution(lv, s);
-    if (a.state === 'won') solved++;
-    const b = playGreedy(lv, s);
-    if (b.state === 'won') greedyWins++;
-    picks += b.stats.picks;
+    const s = play(lv, lv * 7919 + r * 104729);
+    if (s.state === 'won') wins++;
+    if (s.state === 'play') stuck++;          // 봇이 손을 못 댄 판
+    picks += s.stats.picks;
+    blocked += s.stats.blocked;
   }
-  if (solved !== RUNS) allSolved = false;
-  const tiles = 0;
+  if (stuck) ok = false;
   console.log(
-    String(lv).padStart(3) + String(spec.tiles).padStart(6) +
-    String(spec.layers).padStart(4) + String(spec.kinds).padStart(5) +
-    ' | ' + String(solved + '/' + RUNS).padStart(8) +
-    ' | ' + String((greedyWins / RUNS * 100).toFixed(0) + '%').padStart(6) +
-    String((picks / RUNS).toFixed(0)).padStart(11));
+    String(lv).padStart(3) + String(spec.tiles).padStart(6) + String(spec.kinds).padStart(5) +
+    ' | ' + String((wins / RUNS * 100).toFixed(0) + '%').padStart(7) +
+    String((picks / RUNS).toFixed(0)).padStart(10) +
+    String((blocked / RUNS).toFixed(1)).padStart(12) +
+    String(stuck).padStart(6));
 }
-// ── 섞기 검증 ────────────────────────────────────────────────────────────
-// 트레이에 낱장이 남은 상태에서 섞어도 여전히 풀려야 한다.
-let shuffleOk = 0, shuffleRuns = 0;
-for (let lv = 3; lv <= 12; lv++) {
-  for (let r = 0; r < 20; r++) {
-    seed(lv * 31337 + r * 7717);
-    const ses = createSession(lv);
-    const byId = new Map(ses.board.tiles.map(t => [t.id, t]));
-
-    // 아무렇게나 몇 장 집어 트레이를 어지럽힌다
-    let picks = 6 + Math.floor(Math.random() * 6);
-    while (picks-- > 0 && ses.state === 'play') {
-      const free = ses.board.tiles.filter(isFree);
-      if (!free.length) break;
-      pickTile(ses, free[Math.floor(Math.random() * free.length)]);
-    }
-    if (ses.state !== 'play' || ses.tray.length === 0) continue;
-
-    shuffleRuns++;
-    ses.charges.shuffle = 1;
-    useShuffle(ses);
-    for (const id of ses.board.solution) {
-      if (ses.state !== 'play') break;
-      pickTile(ses, byId.get(id));
-    }
-    if (ses.state === 'won') shuffleOk++;
-  }
-}
-const shuffleFine = shuffleOk === shuffleRuns;
-console.log(`\n섞기 후 재검증: ${shuffleOk}/${shuffleRuns}`);
-console.log(allSolved ? '정답 순서 검증 통과 — 모든 판이 풀린다.' : '실패: 풀리지 않는 판이 있다.');
-process.exit(allSolved && shuffleFine ? 0 : 1);
+console.log(ok ? '\n막힌 판 없음 — 봇이 모든 판을 끝까지 뒀다.' : '\n주의: 봇이 손을 못 댄 판이 있다.');

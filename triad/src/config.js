@@ -17,12 +17,14 @@ export const LAYOUT = {
   hud:   { x: 0,  y: 0,    w: W,   h: 132 },
   board: { x: 20, y: 146,  w: 680, h: 752 },
   tray:  { x: 28, y: 928,  w: 664, h: 104, slots: 7, slotW: 88, gap: 8 },
-  power: { y: 1068, h: 128, w: 208, gap: 18 },
+  power: { y: 1068, h: 128, w: 158, gap: 14 },
 };
 
 /** 캔버스 백버퍼를 DPR 에 맞춘다. 논리 좌표계는 항상 W×H 그대로다. */
 export function fitCanvas(canvas) {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  // 3D 더미는 픽셀을 많이 칠한다. 고DPI 기기에서 원본 배율로 그리면
+  // 채우기만으로 프레임이 무너지므로 상한을 둔다.
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
   const w = Math.round(W * dpr);
   const h = Math.round(H * dpr);
   if (canvas.width !== w || canvas.height !== h) {
