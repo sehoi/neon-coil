@@ -13,7 +13,7 @@ import {
 
 const MARGIN = 0.06;        // 이 거리 안이면 접촉 후보로 잡는다 (관통 예방)
 const MAX_PUSH = 0.12;      // 서브스텝 한 번에 밀어내는 최대 거리
-const MU = 0.72;            // 정지 마찰 계수
+const MU = 0.85;            // 정지 마찰 계수 (높을수록 더미가 덜 흘러내린다)
 // 속도 보정은 한 번으로 부족하다. 한 쌍에 접점이 넷이면 서로 물려서
 // 한 바퀴로는 상대 속도가 남고, 그 잔량이 더미를 계속 흔든다.
 const VEL_ITERS = 4;
@@ -75,7 +75,9 @@ export function freeze(world) {
 export function removeBody(world, body) {
   const i = world.bodies.indexOf(body);
   if (i >= 0) world.bodies.splice(i, 1);
-  wakeAll(world, body.p, 3.2);
+  // 들어낸 자리 주변만 깨운다. 넓게 깨울수록 더미가 크게 무너지고,
+  // 무너질 때마다 타일이 엎어져 판이 읽기 어려워진다.
+  wakeAll(world, body.p, 2.0);
 }
 
 export function wake(body) {

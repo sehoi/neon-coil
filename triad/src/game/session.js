@@ -2,6 +2,7 @@
 // 판 자체(더미)는 pile.js 가, 물리는 physics.js 가 맡는다.
 
 import { levelSpec, powerCharges, TRAY_CAP, SCORE, ANIM } from '../data/tuning.js';
+import { axis } from '../core/v3.js';
 import {
   createPile, pourTick, stepPile, liftTile, dropBack, retoss, flipDown, remaining,
 } from './pile.js';
@@ -25,7 +26,7 @@ export function createSession(level, totalScore = 0, runTime = 0) {
     popping: [],
     state: 'play',
     events: [],
-    stats: { picks: 0, matches: 0, undos: 0, powers: 0, blocked: 0 },
+    stats: { picks: 0, matches: 0, undos: 0, powers: 0, blind: 0 },
   };
 }
 
@@ -42,10 +43,6 @@ export function update(session, dt) {
       t.anim.t += dt;
       if (t.anim.t >= t.anim.dur) t.anim = null;
     }
-    if (t.shake) {
-      t.shake -= dt;
-      if (t.shake <= 0) t.shake = 0;
-    }
   }
   for (let i = session.popping.length - 1; i >= 0; i--) {
     const p = session.popping[i];
@@ -56,18 +53,15 @@ export function update(session, dt) {
 
 /**
  * 더미에서 한 장 집는다.
- * @param faceUp 광선이 앞면(무늬)을 맞혔는가. 엎어진 면·옆면은 집을 수 없다.
+ *
+ * **누를 수 있으면 무조건 집힌다.** 엎어졌든 모로 섰든 상관없다 —
+ * 다만 엎어진 것은 무늬를 모르고 집는 셈이라 트레이에 와서야 무엇인지 보인다.
+ * 그게 이 게임의 도박이다.
  */
-export function pickTile(session, tile, faceUp) {
+export function pickTile(session, tile) {
   if (session.state !== 'play' || !tile || tile.state !== 'pile') return false;
 
-  if (!faceUp) {
-    tile.shake = ANIM.shake;
-    session.stats.blocked++;
-    session.events.push({ type: 'blocked', tile });
-    return false;
-  }
-
+  const faceUp = axis(tile.body.R, 2).y > 0.3;
   const at = liftTile(session.pile, tile);
   tile.pickedAt = at;
   tile.anim = { t: 0, dur: ANIM.fly };
@@ -75,7 +69,8 @@ export function pickTile(session, tile, faceUp) {
   session.history.push(tile);
   session.stats.picks++;
   session.picksSinceMatch++;
-  session.events.push({ type: 'pick', tile });
+  if (!faceUp) session.stats.blind++;
+  session.events.push({ type: 'pick', tile, blind: !faceUp });
 
   resolve(session);
   return true;
@@ -220,28 +215,6 @@ export function useFlip(session) {
   session.stats.powers++;
   session.events.push({ type: 'power', name: 'flip', count: n });
   return true;
-}
-
-/**
- * 남은 타일이 전부 엎어져 굳어 버렸을 때의 구제.
- * 도구를 쓰지 않는다 — 플레이어 잘못이 아니라 물리가 만든 막다른 길이다.
- */
-export function rescueFlip(session) {
-  if (session.state !== 'play' || session.pouring) return false;
-
-  const n = flipDown(session.pile, 4);
-  if (n) {
-    session.events.push({ type: 'rescue', count: n });
-    return true;
-  }
-  // 뒤집을 것조차 없으면(처마 밑에 깔린 채 굳은 경우) 통째로 다시 쏟는다.
-  // 어떤 경우에도 판이 굳은 채로 끝나지는 않게 한다.
-  if (remaining(session.pile) > session.tray.length) {
-    retoss(session.pile);
-    session.events.push({ type: 'rescue', count: 0 });
-    return true;
-  }
-  return false;
 }
 
 /** 트레이가 꽉 차 진 판을, 빼내기를 써서 이어간다. */

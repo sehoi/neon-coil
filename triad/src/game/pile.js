@@ -136,7 +136,7 @@ export function pickRay(pile, ray) {
 export function liftTile(pile, tile) {
   const at = { x: tile.body.p.x, y: tile.body.p.y, z: tile.body.p.z };
   tile.lastTransform = { p: at, q: { ...tile.body.q } };
-  removeBody(pile.world, tile.body);
+  removeBody(pile.world, tile.body);   // 주변만 깨운다 (반경은 physics.js)
   tile.state = 'tray';
   tile.body = null;
   pile.settleT = 0;
@@ -186,11 +186,15 @@ export function retoss(pile) {
 }
 
 /**
- * 뒤집기 — 엎어진 타일을 뒤집는다. 위가 트인 것만 뒤집을 수 있다
- * (더미 속에 낀 타일을 뒤집으면 이웃을 뚫고 들어간다).
+ * 뒤집기 — 위가 트인 엎어진 타일을 **전부** 뒤집는다.
+ *
+ * 엎어진 타일은 집을 수 없으니 계속 남는다. 즉 판이 진행될수록 엎어진 것만
+ * 쌓여 나중에는 손댈 것이 없어진다. 그래서 이 도구는 몇 장씩 찔끔 뒤집는 게
+ * 아니라 표면을 통째로 뒤집는다 — 이게 이 게임의 핵심 도구다.
+ * (더미 속에 낀 것은 못 뒤집는다. 뒤집으면 이웃을 뚫고 들어간다.)
  * @returns {number} 뒤집은 장수
  */
-export function flipDown(pile, limit = 8) {
+export function flipDown(pile, limit = 40) {
   const cands = [];
   for (const tile of pile.tiles) {
     if (tile.state !== 'pile') continue;
@@ -239,34 +243,13 @@ export function remaining(pile) {
 }
 
 /**
- * 집을 수 있는 타일이 하나라도 있는가 — 타일당 광선 하나로 싸게 본다.
+ * 지금 화면에서 눌러서 집을 수 있는 타일들. 카메라에서 표본 광선을 쏘아 실제로 확인한다.
  *
- * 남은 타일이 전부 엎어져 있으면 아무것도 집을 수 없고, 트레이는 차지 않으니
- * 지지도 않는다. 그대로 굳어 버리는 그 상황만 잡아내면 된다.
- * 앞면 한가운데만 보므로 "구석만 삐죽 보이는" 타일은 놓친다 — 그래서 이 검사가
- * 실패하면 곧바로 구제하지 않고, 표본을 더 쓰는 visibleFront 로 한 번 더 확인한다.
- */
-export function hasPlayable(pile, eye) {
-  for (const tile of pile.tiles) {
-    if (tile.state !== 'pile') continue;
-    const b = tile.body;
-    const front = axis(b.R, 2);
-    const cx = b.p.x + front.x * b.hz, cy = b.p.y + front.y * b.hz, cz = b.p.z + front.z * b.hz;
-    const dx = cx - eye.x, dy = cy - eye.y, dz = cz - eye.z;
-    const l = Math.hypot(dx, dy, dz) || 1;
-    const dir = { x: dx / l, y: dy / l, z: dz / l };
-    if (front.x * dir.x + front.y * dir.y + front.z * dir.z > -0.15) continue;   // 앞면이 카메라를 등졌다
-    const hit = raycast(pile.world, eye, dir);
-    if (hit && hit.body === b && hit.faceAxis === 2 && hit.faceSign === 1) return true;
-  }
-  return false;
-}
-
-/**
- * 지금 화면에서 앞면이 보이는 타일들. 카메라에서 표본 광선을 쏘아 실제로 확인한다.
  * 매 프레임 돌릴 만큼 싸지 않다 — 힌트와 검증에만 쓴다.
+ * @param frontOnly true 면 무늬(앞면)가 보이는 것만. 엎어진 것도 집을 수는 있지만
+ *                  무엇인지 모르고 집는 것이므로, 봇과 힌트는 아는 것만 세야 한다.
  */
-export function visibleFront(pile, cam, screenRay, samples = 5) {
+export function visibleTiles(pile, cam, screenRay, { frontOnly = false, samples = 5 } = {}) {
   const out = [];
   const grid = [[0, 0], [0.5, 0.5], [-0.5, 0.5], [0.5, -0.5], [-0.5, -0.5]].slice(0, samples);
   for (const tile of pile.tiles) {
@@ -274,20 +257,29 @@ export function visibleFront(pile, cam, screenRay, samples = 5) {
     const b = tile.body;
     let seen = false;
     for (const [u, v] of grid) {
-      const local = { x: u * b.hx * 1.4, y: v * b.hy * 1.4, z: b.hz };
-      const world = {
-        x: b.p.x + b.R[0] * local.x + b.R[1] * local.y + b.R[2] * local.z,
-        y: b.p.y + b.R[3] * local.x + b.R[4] * local.y + b.R[5] * local.z,
-        z: b.p.z + b.R[6] * local.x + b.R[7] * local.y + b.R[8] * local.z,
-      };
-      const sp = cam.projectPoint(world);
-      if (!sp) continue;
-      const hit = pickRay(pile, screenRay(sp.x, sp.y));
-      if (hit && hit.tile === tile && hit.faceUp) { seen = true; break; }
+      // 앞면 표본이 안 보이면 뒷면 표본도 본다 (엎어진 타일은 뒷면이 보인다)
+      for (const face of frontOnly ? [1] : [1, -1]) {
+        const local = { x: u * b.hx * 1.4, y: v * b.hy * 1.4, z: b.hz * face };
+        const world = {
+          x: b.p.x + b.R[0] * local.x + b.R[1] * local.y + b.R[2] * local.z,
+          y: b.p.y + b.R[3] * local.x + b.R[4] * local.y + b.R[5] * local.z,
+          z: b.p.z + b.R[6] * local.x + b.R[7] * local.y + b.R[8] * local.z,
+        };
+        const sp = cam.projectPoint(world);
+        if (!sp) continue;
+        const hit = pickRay(pile, screenRay(sp.x, sp.y));
+        if (hit && hit.tile === tile && (!frontOnly || hit.faceUp)) { seen = true; break; }
+      }
+      if (seen) break;
     }
     if (seen) out.push(tile);
   }
   return out;
+}
+
+/** 무늬가 보이는 타일들 — 무엇인지 알고 집을 수 있는 것. */
+export function visibleFront(pile, cam, screenRay, samples = 5) {
+  return visibleTiles(pile, cam, screenRay, { frontOnly: true, samples });
 }
 
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }

@@ -78,7 +78,7 @@ export function drawPile(ctx, cam, tiles, hot = null) {
       face.depth = (c0.vz + c1.vz + c2.vz + c3.vz) / 4;   // 뷰 z 는 음수, 작을수록 멀다
       face.kind = f.kind;
       face.tile = tile;
-      face.shade = 0.52 + 0.48 * Math.max(0, nx * LIGHT.x + ny * LIGHT.y + nz * LIGHT.z);
+      face.shade = 0.7 + 0.3 * Math.max(0, nx * LIGHT.x + ny * LIGHT.y + nz * LIGHT.z);
       face.px[0] = c0.sx; face.py[0] = c0.sy;
       face.px[1] = c1.sx; face.py[1] = c1.sy;
       face.px[2] = c2.sx; face.py[2] = c2.sy;
@@ -97,39 +97,52 @@ const c2s = { x: 0, y: 0, d: 0 };
 
 function paintFace(ctx, f, hot) {
   const { px, py } = f;
-  ctx.beginPath();
-  ctx.moveTo(px[0], py[0]);
-  ctx.lineTo(px[1], py[1]);
-  ctx.lineTo(px[2], py[2]);
-  ctx.lineTo(px[3], py[3]);
-  ctx.closePath();
+  quadPath(ctx, px, py);
 
   const s = f.shade;
-  if (f.kind === 'front') ctx.fillStyle = rgb(247 * s, 245 * s, 236 * s);
-  else if (f.kind === 'back') ctx.fillStyle = rgb(46 * s, 106 * s, 196 * s);
-  else ctx.fillStyle = rgb(206 * s, 208 * s, 205 * s);
+  if (f.kind === 'front') ctx.fillStyle = rgb(243 * s, 239 * s, 227 * s);
+  else if (f.kind === 'back') ctx.fillStyle = rgb(38 * s, 96 * s, 182 * s);
+  else ctx.fillStyle = rgb(232 * s, 227 * s, 211 * s);
   ctx.fill();
 
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = 'rgba(16,22,36,0.55)';
-  ctx.stroke();
-
+  // 마작패의 얼굴은 테두리보다 한 단 들어가 있다. 그 턱이 보여야 패로 읽힌다.
+  const area = quadArea(px, py);
+  if (area > 90) {
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(24,28,40,0.5)';
+    ctx.stroke();
+  }
   if (f.kind === 'front') {
+    if (area > 260) {
+      inset(ctx, px, py, 0.13);
+      ctx.fillStyle = rgb(255 * s, 253 * s, 246 * s);
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = `rgba(150,140,116,${0.5 * s})`;
+      ctx.stroke();
+    }
     drawFace(ctx, f, hot);
-  } else if (f.kind === 'back') {
-    // 뒷면 무늬 — 뒤집혔다는 것이 색만이 아니라 모양으로도 보여야 한다
+  } else if (f.kind === 'back' && area > 260) {
+    inset(ctx, px, py, 0.15);
+    ctx.fillStyle = rgb(52 * s, 118 * s, 210 * s);
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = `rgba(12,40,90,${0.6 * s})`;
+    ctx.stroke();
+
     ctx.save();
     setQuadTransform(ctx, f);
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-    ctx.lineWidth = 0.045;
+    ctx.strokeStyle = 'rgba(255,255,255,0.42)';
+    ctx.lineWidth = 0.05;
     ctx.beginPath();
-    ctx.moveTo(0.28, 0.5); ctx.lineTo(0.5, 0.28); ctx.lineTo(0.72, 0.5); ctx.lineTo(0.5, 0.72);
+    ctx.moveTo(0.32, 0.5); ctx.lineTo(0.5, 0.32); ctx.lineTo(0.68, 0.5); ctx.lineTo(0.5, 0.68);
     ctx.closePath();
     ctx.stroke();
     ctx.restore();
   }
 
   if (hot) {
+    quadPath(ctx, px, py);
     ctx.lineWidth = 2.4;
     ctx.strokeStyle = '#46f0d0';
     if (SETTINGS.glow) { ctx.shadowColor = '#46f0d0'; ctx.shadowBlur = 12; }
@@ -138,12 +151,43 @@ function paintFace(ctx, f, hot) {
   }
 }
 
+function quadPath(ctx, px, py) {
+  ctx.beginPath();
+  ctx.moveTo(px[0], py[0]);
+  ctx.lineTo(px[1], py[1]);
+  ctx.lineTo(px[2], py[2]);
+  ctx.lineTo(px[3], py[3]);
+  ctx.closePath();
+}
+
+/** 사각형을 중심 쪽으로 k 만큼 오므린 경로. */
+function inset(ctx, px, py, k) {
+  const cx = (px[0] + px[1] + px[2] + px[3]) / 4;
+  const cy = (py[0] + py[1] + py[2] + py[3]) / 4;
+  ctx.beginPath();
+  for (let i = 0; i < 4; i++) {
+    const x = cx + (px[i] - cx) * (1 - k);
+    const y = cy + (py[i] - cy) * (1 - k);
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  }
+  ctx.closePath();
+}
+
+function quadArea(px, py) {
+  let a = 0;
+  for (let i = 0; i < 4; i++) {
+    const j = (i + 1) % 4;
+    a += px[i] * py[j] - px[j] * py[i];
+  }
+  return Math.abs(a) / 2;
+}
+
 function drawFace(ctx, f, hot) {
   const sym = SYMBOLS[f.tile.kind] || SYMBOLS[0];
   ctx.save();
   setQuadTransform(ctx, f);
   // 원근 왜곡은 면 안에서 무시한다. 타일이 작아 눈에 띄지 않는다.
-  drawSymbol(ctx, f.tile.kind, 0.5, 0.5, 0.29, shade(sym.color, hot ? 1 : f.shade));
+  drawSymbol(ctx, f.tile.kind, 0.5, 0.5, 0.33, shade(sym.color, hot ? 1 : f.shade));
   ctx.restore();
 }
 
