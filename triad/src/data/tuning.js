@@ -1,5 +1,7 @@
 // 모든 밸런싱 수치는 여기 모여 있다. 다른 파일에 상수를 흘리지 않는다.
 
+import { rnd } from '../core/rng.js';
+
 /**
  * 타일 한 장 (물리 단위, 반 크기). 가로 1 × 세로 1.32 × 두께 0.54.
  *
@@ -27,22 +29,63 @@ export const TILE = { w: 64, h: 80, radius: 9 };
 /** 트레이 칸 수. 이만큼 차고도 3장이 안 모이면 그 판은 끝난다. */
 export const TRAY_CAP = 7;
 
+/**
+ * 판 크기의 양 끝. 첫 판은 손에 익히는 30장, 꼭대기는 300장이다.
+ * 꼭대기를 찍은 뒤로는 210·210·300 을 되풀이한다 — 300장만 계속 나오면
+ * 한 판이 너무 길어져 앉은자리에서 두 판을 못 깬다.
+ */
+const TILES = { min: 30, max: 300, cruise: 210, peak: 10 };
+
+/**
+ * 상자의 세로/가로 비. 화면에서 판을 그리는 사각형(LAYOUT.board, 680×752)과
+ * 같게 잡아야 카메라가 맞췄을 때 위아래·양옆에 빈 곳이 안 남는다.
+ */
+export const BOX_RATIO = 752 / 680;
+
 /** 레벨 난이도 곡선. level 은 1부터. */
 export function levelSpec(level) {
   const L = Math.max(1, level | 0);
-  // 한 판에 120장부터 시작한다. 장수가 많아야 타일이 화면에서 작게 보이고,
-  // 그래야 원본처럼 "더미를 뒤진다"는 느낌이 난다.
-  const tiles = clamp(120 + (L - 1) * 6, 120, 180);
+  const tiles = tileCount(L);
+  const triples = tiles / 3;
   return {
     level: L,
-    tiles: tiles - (tiles % 3),
-    kinds: clamp(5 + L, 6, 12),        // 레벨마다 한 종류씩. 종류가 늘수록 트레이가 빨리 찬다
+    tiles,
+    // 무늬는 판 크기를 따라간다 — 한 무늬가 두어 벌쯤 되게. 무늬가 적으면
+    // 같은 그림만 잔뜩 보여 고를 것이 없고, 마작 한 벌이 34종이라 거기서 멈춘다.
+    kinds: clamp(Math.round(triples * 0.5), 6, 34),
     // 무늬를 뽑아 올 세트 수. 판마다 어느 세트가 걸릴지 달라지므로 레벨 1도
-    // 매번 다른 패로 시작한다. 세트가 늘수록 서로 안 닮은 무늬가 섞인다.
+    // 매번 다른 패로 시작한다. 고른 세트는 하나도 빠짐없이 판에 오른다.
     sets: clamp(3 + Math.floor((L - 1) / 3), 3, 5),
-    layers: clamp(1.25 + L * 0.05, 1.25, 2.0),   // 더미를 몇 겹으로 쌓을지 (상자 넓이가 정해진다)
-    parTime: 40 + tiles * 1.1,
+    // 몇 겹으로 쌓을지 — 상자 넓이가 이걸로 정해진다 (game/pile.js).
+    // 300장·2.6겹이면 타일 한 장이 화면에서 58×77 픽셀이라 아직 누를 만하다.
+    layers: clamp(1.2 + 1.4 * (tiles - TILES.min) / (TILES.max - TILES.min), 1.2, 2.6),
+    parTime: 12 + tiles * 0.85,
   };
+}
+
+/**
+ * 이 레벨의 장수. 꼭대기까지는 지수 곡선이다 —
+ * 30 · 39 · 51 · 66 · 84 · 108 · 138 · 180 · 231 · 300.
+ * 앞은 완만하고 뒤로 갈수록 한 판이 눈에 띄게 커진다.
+ */
+function tileCount(L) {
+  if (L >= TILES.peak) {
+    // 300장 뒤로는 210 · 210 · 300 이 반복된다
+    return (L - TILES.peak) % 3 === 0 ? TILES.max : TILES.cruise;
+  }
+  const k = Math.pow(TILES.max / TILES.min, (L - 1) / (TILES.peak - 1));
+  return 3 * Math.round(TILES.min * k / 3);   // 3의 배수라야 판이 비워진다
+}
+
+/**
+ * 카메라가 감쌀 상자의 높이.
+ *
+ * 실측한 더미 꼭대기는 1.2겹에서 2.4, 2.6겹에서 4.1 이다. 다만 그건 한가운데
+ * 봉우리 얘기고 귀퉁이는 훨씬 낮으므로, 그 높이를 그대로 담으면 쓸데없이
+ * 멀찍이 물러나 판이 작아진다. 봉우리의 3/4 쯤에 맞춘다.
+ */
+export function boxHeight(spec) {
+  return 1.0 + spec.layers;
 }
 
 /**
@@ -56,8 +99,9 @@ export function startingItems() {
 /**
  * 골드와 값.
  *
- * 한 판을 깨면 그 판 점수의 1/20 이 골드가 된다 (레벨 1 이 6000점쯤이니 300골드).
- * 값은 "한 판 깨면 센 것 하나, 아니면 잔 것 서넛" 이 되게 잡았다.
+ * 한 판을 깨면 그 판 점수의 1/20 이 골드가 된다. 판이 커질수록 점수도 커지므로
+ * 골드도 따라 는다 — 30장 판이 85골드쯤, 300장 판이 700골드쯤이다.
+ * 값은 "작은 판을 깨면 잔 것 하나, 큰 판을 깨면 골라 살 수 있다" 가 되게 잡았다.
  */
 export const ECONOMY = {
   goldPerScore: 20,
@@ -71,15 +115,19 @@ export const ECONOMY = {
 
 /**
  * 판 하나를 깰 때마다 주는 아이템 세트.
- * 되돌리기·뒤집기는 매번, 빼내기는 두 판마다, 섞기는 세 판마다.
+ *
+ * 되돌리기·빼내기는 매번 주고, 판이 커질수록 한 번에 더 준다.
+ * 뒤집기와 섞기는 판을 통째로 뒤집는 물건이라 확률로만 나온다 —
+ * 그냥 쌓이면 어려운 판을 어려운 채로 풀 이유가 없어진다.
  */
 export function clearReward(level) {
   const L = Math.max(1, level | 0);
+  const step = Math.min(3, 1 + Math.floor(L / 4));   // 4레벨마다 한 개씩 후해진다
   return {
-    undo:     1,
-    flip:     1,
-    withdraw: L % 2 === 0 ? 1 : 0,
-    shuffle:  L % 3 === 0 ? 1 : 0,
+    undo:     step + 1,
+    withdraw: step,
+    flip:     rnd() < 0.40 ? 1 : 0,
+    shuffle:  rnd() < 0.20 ? 1 : 0,
   };
 }
 

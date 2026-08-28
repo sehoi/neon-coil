@@ -5,7 +5,7 @@
 
 import { rnd, shuffle } from '../core/rng.js';
 import { v3, qAxisAngle, qMul } from '../core/v3.js';
-import { TILE3D, POUR } from '../data/tuning.js';
+import { TILE3D, POUR, BOX_RATIO } from '../data/tuning.js';
 import { chooseKinds } from '../data/symbols.js';
 import {
   createWorld, addBody, removeBody, step as stepWorld, raycast, freeze,
@@ -17,10 +17,12 @@ const FACE_UP = qAxisAngle(v3(1, 0, 0), -Math.PI / 2);   // 로컬 +z(앞면)가
 const ALIGN_GAP = 0.04;
 
 export function createPile(spec) {
-  // 상자 넓이는 "몇 겹으로 쌓이게 할지"로 정한다
+  // 상자 넓이는 "몇 겹으로 쌓이게 할지"로 정한다. 장수가 적은 판은 상자도
+  // 같이 줄어들고, 카메라가 그 상자에 맞춰 붙으므로 화면은 늘 꽉 찬다.
+  // 가로세로 비는 화면의 판 사각형과 같게 잡는다 (BOX_RATIO).
   const area = spec.tiles * (TILE3D.hx * 2) * (TILE3D.hy * 2) / spec.layers;
-  const halfX = Math.sqrt(area / (4 * 1.15));
-  const halfZ = halfX * 1.15;
+  const halfX = Math.sqrt(area / (4 * BOX_RATIO));
+  const halfZ = halfX * BOX_RATIO;
 
   const world = createWorld({ halfX, halfZ });
 

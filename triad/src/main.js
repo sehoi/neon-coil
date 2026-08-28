@@ -7,13 +7,14 @@ import { loadSave, getSave, submitRun, previewRank, persist, saveRun, loadRun, c
 import { ITEMS, grantClear, buyItem, claimFree } from './game/wallet.js';
 import { attachInput, input, consumeRect, takeTap, key, endFrame, pointInRect } from './core/input.js';
 import { SYMBOLS } from './data/symbols.js';
+import { boxHeight } from './data/tuning.js';
 import {
   createSession, update as updateSession, pickTile, serializeSession, restoreSession,
   useUndo, useWithdraw, useShuffle, useFlip, revive,
 } from './game/session.js';
 import { pickRay, remaining, visibleFront, visibleTiles as visibleAny } from './game/pile.js';
 import { createCamera, frameBox, screenRay, projectPoint } from './render/camera.js';
-import { drawPile, drawTable } from './render/pile3d.js';
+import { drawPileCached, drawTable } from './render/pile3d.js';
 import { drawBackground, drawTrayTiles, drawComboFloat, trayBurstPoint } from './render/renderer.js';
 import { burst, updateParticles, clearParticles } from './render/particles.js';
 import { drawHud, drawTray, drawPowers } from './ui/hud.js';
@@ -61,9 +62,10 @@ function newSession(level, total = 0, runTime = 0) {
 
 function useSession(session) {
   game.session = session;
-  // 더미가 3~3.7 단위까지 솟으므로 그 높이를 담아 잡는다 (안 그러면 꼭대기가 잘린다)
+  // 상자는 판마다 크기가 다르다 — 장수가 적으면 상자도 작고, 카메라가 거기에
+  // 맞춰 붙으므로 화면은 늘 꽉 찬다. 높이는 그 판이 실제로 쌓이는 만큼만 잡는다.
   // 바로 위에서 내려다본다 (π/2). 비스듬히 보면 앞줄 타일이 뒷줄을 가린다.
-  frameBox(game.cam, session.pile.halfX, session.pile.halfZ, 2.8, Math.PI / 2);
+  frameBox(game.cam, session.pile.halfX, session.pile.halfZ, boxHeight(session.spec), Math.PI / 2);
   game.hot = null;
   game.wasPouring = session.pouring;
 }
@@ -371,7 +373,7 @@ function draw() {
     const hit = pickRay(s.pile, screenRay(game.cam, input.pointer.x, input.pointer.y));
     if (hit) game.hot = hit.tile;
   }
-  drawPile(ctx, game.cam, s.pile.tiles, game.hot);
+  drawPileCached(ctx, game.cam, s.pile, game.hot, LAYOUT.board, dpr);
   ctx.restore();
 
   if (game.state !== 'title' && game.state !== 'shop') {

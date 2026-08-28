@@ -64,7 +64,10 @@ export const SETS = [
 export function chooseKinds(setCount, kindCount) {
   const pool = SETS.slice();
   shuffle(pool);
-  const picked = pool.slice(0, Math.max(1, Math.min(setCount, pool.length)));
+  // 고른 세트는 하나도 빠짐없이 판에 오른다 — 세트를 셋 노출하기로 했으면
+  // 셋 다 나와야지, 그중 둘만 나오면 판이 늘 같은 그림으로 보인다.
+  // 그래서 세트 수는 뽑을 종류 수를 넘지 않는다.
+  const picked = pool.slice(0, Math.max(1, Math.min(setCount, pool.length, kindCount)));
 
   const out = [];
   for (let i = 0; out.length < kindCount; i++) {
