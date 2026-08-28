@@ -79,6 +79,8 @@ function useSession(session) {
 function saveProgress(force = false) {
   const s = game.session;
   if (s.state !== 'play' || s.pouring) return;
+  // 정렬해 옮기는 중에는 적지 않는다. 그 순간 자세는 아직 가는 길 위에 있다.
+  if (s.pile.align) return;
   // 무너지는 중에 적으면 되살릴 때 속도를 버리므로 타일이 조금 어긋난다.
   // 급할 때(탭을 닫을 때)가 아니면 더미가 멈춘 다음에 적는다.
   if (!force && !s.pile.world.asleep) return;

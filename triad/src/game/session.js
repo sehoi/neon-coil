@@ -210,7 +210,9 @@ export function restoreSession(data, items = startingItems()) {
  * 아직 절반만 놓인 판을 정렬하거나 다시 쏟으면 아이템만 버리는 셈이다.
  */
 function ready(session) {
-  return session.state === 'play' && !session.pouring;
+  // 쏟는 중이거나 정렬해 옮기는 중에는 도구를 못 쓴다. 그 0.3초 사이에 또 부르면
+  // 가는 길 한복판의 자세를 "원래 자리"로 읽어 칸이 엉킨다.
+  return session.state === 'play' && !session.pouring && !session.pile.align;
 }
 
 

@@ -41,7 +41,7 @@ function stockFor(level) {
 function settle(session, seconds) {
   for (let i = 0; i < seconds * 60; i++) {
     update(session, DT);
-    if (!session.pouring && session.pile.world.asleep) return true;
+    if (!session.pouring && !session.pile.align && session.pile.world.asleep) return true;
   }
   return false;
 }
