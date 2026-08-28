@@ -4,17 +4,40 @@
 // 더미 옆구리에 낀 타일도 무늬만 보이면 집힌다.
 
 import { rnd, shuffle } from '../core/rng.js';
-import { v3, qAxisAngle, qMul } from '../core/v3.js';
+import { v3, qAxisAngle, qMul, qNorm, qToMat } from '../core/v3.js';
 import { TILE3D, POUR, BOX_RATIO } from '../data/tuning.js';
 import { chooseKinds } from '../data/symbols.js';
 import {
-  createWorld, addBody, removeBody, step as stepWorld, raycast, freeze,
+  createWorld, addBody, removeBody, step as stepWorld, raycast, freeze, wakeAll,
 } from './physics.js';
 
 const FACE_UP = qAxisAngle(v3(1, 0, 0), -Math.PI / 2);   // 로컬 +z(앞면)가 위를 본다
 
 /** 정렬했을 때 칸과 칸 사이 틈. 딱 붙이면 어디서 한 장이 끝나는지 안 보인다. */
 const ALIGN_GAP = 0.04;
+
+/**
+ * 포개 놓을 때 층과 층 사이에 두는 머리카락만 한 틈.
+ *
+ * 딱 붙여 놓으면 접촉 해소기가 첫 스텝에 파고듦을 보고 서로 밀어내는데, 그 밀침이
+ * 옆으로도 나가 기둥 꼭대기가 튕겨 나간다 (300장 판 실측: 딱 붙이면 최대 기울기
+ * 115°, 즉 몇 장이 아예 넘어졌다. 0.01 을 띄우면 38° 로 아무도 안 넘어진다).
+ * 화면에서는 0.6픽셀이라 눈에는 안 보인다.
+ */
+const ALIGN_LIFT = 0.01;
+
+/**
+ * 한 칸에 쌓는 높이의 한계.
+ *
+ * 다섯 층을 올리면 꼭대기가 저 혼자 흔들리다 옆으로 넘어간다 — 넘어간 타일은
+ * 무늬를 감추므로 "전부 위를 보게 한다"는 약속이 그만큼 깨진다. 넷까지만 올리고
+ * 넘치는 것은 가장 가까운 빈 칸으로 보낸다. 300장·98칸이면 평균이 3.06층이라
+ * 다섯 층짜리 기둥 몇 개만 한 칸씩 옆으로 밀린다.
+ */
+const ALIGN_CAP = 4;
+
+/** 제 칸까지 미끄러져 가는 데 걸리는 시간 (초). */
+const ALIGN_TIME = 0.32;
 
 export function createPile(spec) {
   // 상자 넓이는 "몇 겹으로 쌓이게 할지"로 정한다. 장수가 적은 판은 상자도
@@ -42,6 +65,7 @@ export function createPile(spec) {
     tiles: [],
     kinds,
     queue: [],          // 다시 쏟기를 기다리는 타일들
+    align: null,        // 정렬해 옮기는 중이면 그 진행 상태
     poured: 0,
     frame: 0,
     settleT: 0,
@@ -143,6 +167,8 @@ function surfaceAt(pile, x, z) {
 }
 
 export function stepPile(pile, dt) {
+  if (pile.align) { stepAlign(pile, dt); return true; }
+
   const moved = stepWorld(pile.world, dt);
   if (!moved) { pile.settleT = 0; return false; }
 
@@ -260,27 +286,80 @@ export function alignAll(pile) {
   const z0 = -(rows - 1) * ch / 2;
   const stack = new Int32Array(cols * rows);   // 칸마다 몇 장 쌓였는지
 
+  const moves = [];
   // 아래에 있던 것이 아래로 간다 — 쌓인 순서가 곧 더미의 모양이다
   live.sort((a, b) => a.body.p.y - b.body.p.y);
   for (const tile of live) {
-    const cx = clamp(Math.round((tile.body.p.x - x0) / cw), 0, cols - 1);
-    const cz = clamp(Math.round((tile.body.p.z - z0) / ch), 0, rows - 1);
+    const wx = clamp(Math.round((tile.body.p.x - x0) / cw), 0, cols - 1);
+    const wz = clamp(Math.round((tile.body.p.z - z0) / ch), 0, rows - 1);
+    const [cx, cz] = roomNear(stack, cols, rows, wx, wz);
     const layer = stack[cz * cols + cx]++;
 
+    const from = { p: { ...tile.body.p }, q: { ...tile.body.q } };
     removeBody(pile.world, tile.body);
     const body = addBody(pile.world, {
-      p: v3(x0 + cx * cw, TILE3D.hz + layer * TILE3D.hz * 2, z0 + cz * ch),
+      p: v3(x0 + cx * cw, TILE3D.hz + layer * (TILE3D.hz * 2 + ALIGN_LIFT), z0 + cz * ch),
       q: FACE_UP,
       hx: TILE3D.hx, hy: TILE3D.hy, hz: TILE3D.hz,
     });
     body.tile = tile;
     tile.body = body;
+    moves.push({ body, from, to: { p: { ...body.p }, q: { ...body.q } } });
+    place(body, from.p, from.q);        // 보여 주기는 있던 자리에서 시작한다
   }
-  // 자리를 다 잡아 놓았으므로 그대로 재운다. 물리에 맡기면 기둥이 무너져
-  // 무늬를 다 보여 준다는 약속이 깨진다.
+
+  // 옮기는 동안에는 물리를 멈춰 둔다 — 중간 자세는 아직 아무 데도 안 닿아 있다.
   freeze(pile.world);
+  pile.align = { t: 0, moves };
   pile.settleT = 0;
   return live.length;
+}
+
+/**
+ * 정렬 한 프레임.
+ *
+ * 자리를 순간이동으로 바꾸면 판이 그림처럼 탁 굳는다. 있던 자리에서 제 칸까지
+ * 실제로 미끄러져 가는 이 0.32초가 "판을 정리했다"는 유일한 신호다.
+ * 다 옮기고 나면 물리에 넘겨 제 무게로 내려앉게 둔다 — 얼려 두지 않는다.
+ */
+function stepAlign(pile, dt) {
+  const a = pile.align;
+  a.t = Math.min(1, a.t + dt / ALIGN_TIME);
+  const k = 1 - Math.pow(1 - a.t, 3);          // 끝에서 부드럽게 선다
+  for (const m of a.moves) {
+    if (!m.body.tile || m.body.tile.body !== m.body) continue;   // 옮기는 중에 집힌 타일
+    place(m.body, lerpV(m.from.p, m.to.p, k), nlerpQ(m.from.q, m.to.q, k));
+  }
+  pile.world.rev++;                            // 그림이 바뀌었다 (렌더 캐시가 본다)
+  if (a.t < 1) return;
+
+  pile.align = null;
+  wakeAll(pile.world, v3(0, 0, 0), Infinity);  // 이제부터는 물리가 맡는다
+  pile.settleT = 0;
+}
+
+/** 몸을 그 자리에 그대로 놓는다 (속도는 건드리지 않는다). */
+function place(body, p, q) {
+  body.p.x = p.x; body.p.y = p.y; body.p.z = p.z;
+  body.q.x = q.x; body.q.y = q.y; body.q.z = q.z; body.q.w = q.w;
+  body.prevP.x = p.x; body.prevP.y = p.y; body.prevP.z = p.z;
+  body.prevQ.x = q.x; body.prevQ.y = q.y; body.prevQ.z = q.z; body.prevQ.w = q.w;
+  qToMat(body.q, body.R);
+}
+
+function lerpV(a, b, k) {
+  return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, z: a.z + (b.z - a.z) * k };
+}
+
+/** 짧은 회전이라 구면 보간까지 갈 것 없다. 대신 먼 쪽으로 도는 것만 막는다. */
+function nlerpQ(a, b, k) {
+  const s = (a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w) < 0 ? -1 : 1;
+  return qNorm({
+    x: a.x + (b.x * s - a.x) * k,
+    y: a.y + (b.y * s - a.y) * k,
+    z: a.z + (b.z * s - a.z) * k,
+    w: a.w + (b.w * s - a.w) * k,
+  });
 }
 
 /** 무늬가 kind 인 타일을 위에 있는 것부터 n 장 고른다 (빼내기). */
@@ -344,6 +423,31 @@ export function visibleFront(pile, cam, screenRay, samples = 5) {
 }
 
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+/**
+ * (cx, cz) 부터 시작해 아직 자리가 남은 칸을 찾는다. 제자리가 찼으면 한 겹씩
+ * 둘레를 넓혀 가며 가장 가까운 칸으로 — 어디를 팠는지가 뭉개지지 않게.
+ * 판 전체가 꽉 차 있으면 그중 가장 낮은 칸에 얹는다.
+ */
+function roomNear(stack, cols, rows, cx, cz) {
+  for (let r = 0; r < Math.max(cols, rows); r++) {
+    let best = null, bestN = Infinity;
+    for (let dz = -r; dz <= r; dz++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (r && Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;   // 둘레만
+        const x = cx + dx, z = cz + dz;
+        if (x < 0 || z < 0 || x >= cols || z >= rows) continue;
+        const n = stack[z * cols + x];
+        if (n < ALIGN_CAP && n < bestN) { best = [x, z]; bestN = n; }    // 낮은 칸부터
+      }
+    }
+    if (best) return best;
+  }
+  // 칸보다 타일이 많다 — 가장 낮은 칸에 얹는다
+  let at = 0;
+  for (let i = 1; i < stack.length; i++) if (stack[i] < stack[at]) at = i;
+  return [at % cols, Math.floor(at / cols)];
+}
 
 // ── 저장과 복원 ───────────────────────────────────────────────────────────
 
