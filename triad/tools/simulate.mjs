@@ -112,7 +112,7 @@ function play(level, s) {
   return session;
 }
 
-console.log('레벨  타일  무늬 |  클리어  평균 집기  눈감고 집기  쓴 아이템  손 못 댐');
+console.log('레벨  타일  세트  무늬 |  클리어  평균 집기  눈감고 집기  쓴 아이템  손 못 댐');
 let ok = true;
 for (let lv = 1; lv <= LEVELS; lv++) {
   const spec = levelSpec(lv);
@@ -127,7 +127,8 @@ for (let lv = 1; lv <= LEVELS; lv++) {
   }
   if (stuck) ok = false;
   console.log(
-    String(lv).padStart(3) + String(spec.tiles).padStart(6) + String(spec.kinds).padStart(5) +
+    String(lv).padStart(3) + String(spec.tiles).padStart(6) + String(spec.sets).padStart(6) +
+    String(spec.kinds).padStart(6) +
     ' | ' + String((wins / RUNS * 100).toFixed(0) + '%').padStart(7) +
     String((picks / RUNS).toFixed(0)).padStart(10) +
     String((blocked / RUNS).toFixed(1)).padStart(12) +

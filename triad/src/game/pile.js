@@ -6,11 +6,15 @@
 import { rnd, shuffle } from '../core/rng.js';
 import { v3, qAxisAngle, qMul } from '../core/v3.js';
 import { TILE3D, POUR } from '../data/tuning.js';
+import { chooseKinds } from '../data/symbols.js';
 import {
-  createWorld, addBody, removeBody, placeBody, step as stepWorld, raycast, freeze,
+  createWorld, addBody, removeBody, step as stepWorld, raycast, freeze,
 } from './physics.js';
 
 const FACE_UP = qAxisAngle(v3(1, 0, 0), -Math.PI / 2);   // 로컬 +z(앞면)가 위를 본다
+
+/** 정렬했을 때 칸과 칸 사이 틈. 딱 붙이면 어디서 한 장이 끝나는지 안 보인다. */
+const ALIGN_GAP = 0.04;
 
 export function createPile(spec) {
   // 상자 넓이는 "몇 겹으로 쌓이게 할지"로 정한다
@@ -20,10 +24,12 @@ export function createPile(spec) {
 
   const world = createWorld({ halfX, halfZ });
 
-  // 무늬 가방 — 종류마다 3의 배수로. 3장씩 짝이 맞아야 판이 비워진다
+  // 무늬 가방 — 종류마다 3의 배수로. 3장씩 짝이 맞아야 판이 비워진다.
+  // 어떤 무늬를 쓸지는 세트에서 뽑는다 (data/symbols.js).
+  const picked = chooseKinds(spec.sets || 5, spec.kinds);
   const triples = spec.tiles / 3;
   const bag = [];
-  for (let i = 0; i < triples; i++) bag.push(i % spec.kinds);
+  for (let i = 0; i < triples; i++) bag.push(picked[i % picked.length]);
   shuffle(bag);
   const kinds = [];
   for (const k of bag) kinds.push(k, k, k);
@@ -230,42 +236,46 @@ export function retoss(pile) {
 }
 
 /**
- * 정렬 — 남은 타일을 격자로 늘어놓고 **전부 앞면이 위를 보게** 한다.
+ * 정렬 — 타일을 **제 자리에 가장 가까운 칸**에 눕혀 층끼리 정확히 포개 놓는다.
  *
- * 뒤집기가 표면 몇 장만 뒤집던 시절에는 판이 진행될수록 엎어진 것만 쌓였다.
- * 이제는 판을 통째로 정리한다 — 한 판에 몇 번 없는 "다 보이는 순간"이고,
- * 그래서 값이 비싸다. 한 겹에 다 못 놓으면 그 위로 겹을 올린다.
+ * 자리를 한 톨도 안 옮기면 층이 반 칸씩 어긋나 옆면만 잔뜩 보이는 계단이 된다.
+ * 그렇다고 처음부터 다시 늘어놓으면 어디를 팠는지가 다 날아간다. 그래서 칸은
+ * 나누되 **원래 있던 자리에서 가장 가까운 칸**으로 보낸다 — 두껍던 쪽은 그대로
+ * 두껍고, 파 놓은 자리는 그대로 비어 있다.
+ *
+ * 같은 칸에 여러 장이 오면 그 칸에서 정확히 포개어 쌓는다. 방위도 전부 0 으로
+ * 맞춘다. 한 장이라도 비스듬하면 그 기둥은 포개지지 않는다.
  * @returns {number} 정렬한 장수
  */
 export function alignAll(pile) {
   const live = pile.tiles.filter(t => t.state === 'pile');
   if (!live.length) return 0;
 
-  const cw = TILE3D.hx * 2 + 0.06, ch = TILE3D.hy * 2 + 0.06;
-  const cols = Math.max(1, Math.floor((pile.halfX * 2 - 0.1) / cw));
-  const rows = Math.max(1, Math.floor((pile.halfZ * 2 - 0.1) / ch));
-  const layers = Math.max(1, Math.ceil(live.length / (cols * rows)));
-  const per = Math.ceil(live.length / layers);          // 겹마다 고르게 나눈다
-  const x0 = -(cols * cw) / 2 + cw / 2;
-  const z0 = -(rows * ch) / 2 + ch / 2;
+  const cw = TILE3D.hx * 2 + ALIGN_GAP, ch = TILE3D.hy * 2 + ALIGN_GAP;
+  const cols = Math.max(1, Math.floor(pile.halfX * 2 / cw));
+  const rows = Math.max(1, Math.floor(pile.halfZ * 2 / ch));
+  const x0 = -(cols - 1) * cw / 2;             // 첫 칸의 중심
+  const z0 = -(rows - 1) * ch / 2;
+  const stack = new Int32Array(cols * rows);   // 칸마다 몇 장 쌓였는지
 
-  // 홀수 겹은 반 칸 밀어 얹는다. 정확히 포개면 아래 겹이 한 장도 안 보인다.
-  // 다만 남은 여백보다 더 밀면 벽을 뚫으므로 여백만큼만 민다.
-  const offX = Math.min(0.5, (pile.halfX * 2 - cols * cw) / (2 * cw));
-  const offZ = Math.min(0.5, (pile.halfZ * 2 - rows * ch) / (2 * ch));
+  // 아래에 있던 것이 아래로 간다 — 쌓인 순서가 곧 더미의 모양이다
+  live.sort((a, b) => a.body.p.y - b.body.p.y);
+  for (const tile of live) {
+    const cx = clamp(Math.round((tile.body.p.x - x0) / cw), 0, cols - 1);
+    const cz = clamp(Math.round((tile.body.p.z - z0) / ch), 0, rows - 1);
+    const layer = stack[cz * cols + cx]++;
 
-  live.forEach((tile, i) => {
-    const layer = Math.floor(i / per);
-    const j = i % per;
-    const odd = layer % 2;
-    placeBody(tile.body, {
-      x: x0 + ((j % cols) + odd * offX) * cw,
-      z: z0 + (Math.floor(j / cols) + odd * offZ) * ch,
-      y: TILE3D.hz + layer * (TILE3D.hz * 2 + 0.004),
-    }, FACE_UP);
-  });
-  // 자리를 정확히 잡아 놓았으므로 다시 굴릴 것이 없다. 그대로 재운다 —
-  // 한 장을 집으면 그 둘레만 깨어나 위 칸이 내려앉는다.
+    removeBody(pile.world, tile.body);
+    const body = addBody(pile.world, {
+      p: v3(x0 + cx * cw, TILE3D.hz + layer * TILE3D.hz * 2, z0 + cz * ch),
+      q: FACE_UP,
+      hx: TILE3D.hx, hy: TILE3D.hy, hz: TILE3D.hz,
+    });
+    body.tile = tile;
+    tile.body = body;
+  }
+  // 자리를 다 잡아 놓았으므로 그대로 재운다. 물리에 맡기면 기둥이 무너져
+  // 무늬를 다 보여 준다는 약속이 깨진다.
   freeze(pile.world);
   pile.settleT = 0;
   return live.length;

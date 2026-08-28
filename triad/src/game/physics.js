@@ -41,7 +41,11 @@ export function addBody(world, { p, q, hx, hy, hz, density = 1 }) {
   const ex = 2 * hx, ey = 2 * hy, ez = 2 * hz;
   const body = {
     id: nextId++,
-    p, q,
+    // 자리와 자세는 반드시 복사해서 갖는다. 부르는 쪽이 상수나 재사용 객체를
+    // 넘기면 (예: 정렬이 넘기는 FACE_UP) 몸 여럿이 쿼터니언 하나를 공유하게 되고,
+    // 한 장이 돌 때 온 더미가 같이 돌아 판이 터진다.
+    p: v3(p.x, p.y, p.z),
+    q: { x: q.x, y: q.y, z: q.z, w: q.w },
     v: v3(), w: v3(),
     hx, hy, hz,
     invM: 1 / m,
@@ -51,7 +55,9 @@ export function addBody(world, { p, q, hx, hy, hz, density = 1 }) {
       12 / (m * (ex * ex + ey * ey)),
     ),
     R: mat3(),
-    prevP: v3(), prevQ: { x: 0, y: 0, z: 0, w: 1 },
+    // 갓 만든 몸도 prev 는 지금 자리여야 한다. 원점으로 두면, 한 스텝도 안 밟고
+    // 잠든 몸의 마찰 계산이 "원점에서 여기까지 미끄러졌다"고 읽는다.
+    prevP: v3(p.x, p.y, p.z), prevQ: { x: q.x, y: q.y, z: q.z, w: q.w },
     sleeping: false,
     sleepT: 0,
   };
@@ -66,28 +72,14 @@ export function freeze(world) {
   for (const b of world.bodies) {
     b.v.x = b.v.y = b.v.z = 0;
     b.w.x = b.w.y = b.w.z = 0;
+    // 잠든 몸은 적분되지 않으므로 prev 가 여기서 굳는다. 이웃의 마찰 계산이
+    // 그 값을 읽으므로 지금 자리로 맞춰 둔다.
+    b.prevP.x = b.p.x; b.prevP.y = b.p.y; b.prevP.z = b.p.z;
+    b.prevQ.x = b.q.x; b.prevQ.y = b.q.y; b.prevQ.z = b.q.z; b.prevQ.w = b.q.w;
     b.sleeping = true;
     b.sleepT = SLEEP_TIME;
   }
   world.asleep = true;
-}
-
-/**
- * 물체를 원하는 자리·자세에 그대로 갖다 놓는다 (도구가 판을 정리할 때).
- * 순간이동한 자리를 prev 로도 잡아 두는 것이 핵심이다 — 안 그러면 다음 스텝에서
- * v = (p - prevP)/h 가 터무니없이 커져 더미가 폭발한다.
- */
-export function placeBody(body, p, q) {
-  body.p.x = p.x; body.p.y = p.y; body.p.z = p.z;
-  body.q.x = q.x; body.q.y = q.y; body.q.z = q.z; body.q.w = q.w;
-  qNorm(body.q);
-  qToMat(body.q, body.R);
-  body.v.x = body.v.y = body.v.z = 0;
-  body.w.x = body.w.y = body.w.z = 0;
-  body.prevP.x = p.x; body.prevP.y = p.y; body.prevP.z = p.z;
-  body.prevQ.x = body.q.x; body.prevQ.y = body.q.y; body.prevQ.z = body.q.z; body.prevQ.w = body.q.w;
-  body.sleeping = false;
-  body.sleepT = 0;
 }
 
 export function removeBody(world, body) {
