@@ -13,6 +13,9 @@ import {
 
 const FACE_UP = qAxisAngle(v3(1, 0, 0), -Math.PI / 2);   // 로컬 +z(앞면)가 위를 본다
 
+/** 정렬했을 때 칸과 칸 사이 틈. 딱 붙이면 어디서 한 장이 끝나는지 안 보인다. */
+const ALIGN_GAP = 0.04;
+
 export function createPile(spec) {
   // 상자 넓이는 "몇 겹으로 쌓이게 할지"로 정한다
   const area = spec.tiles * (TILE3D.hx * 2) * (TILE3D.hy * 2) / spec.layers;
@@ -233,102 +236,49 @@ export function retoss(pile) {
 }
 
 /**
- * 정렬 — 타일을 **있던 자리에 그대로** 두고 앞면만 위로 눕힌다.
+ * 정렬 — 타일을 **제 자리에 가장 가까운 칸**에 눕혀 층끼리 정확히 포개 놓는다.
  *
- * 격자로 다시 늘어놓으면 판이 통째로 딴 판이 된다. 지금까지 어디를 팠는지,
- * 어느 쪽이 두꺼운지 하는 정보가 다 날아간다. 그래서 (x, z) 와 방위(yaw)는
- * 건드리지 않고, 세로로 선 것·엎어진 것을 눕혀 무늬만 드러낸다.
+ * 자리를 한 톨도 안 옮기면 층이 반 칸씩 어긋나 옆면만 잔뜩 보이는 계단이 된다.
+ * 그렇다고 처음부터 다시 늘어놓으면 어디를 팠는지가 다 날아간다. 그래서 칸은
+ * 나누되 **원래 있던 자리에서 가장 가까운 칸**으로 보낸다 — 두껍던 쪽은 그대로
+ * 두껍고, 파 놓은 자리는 그대로 비어 있다.
  *
- * 눕히면 두께가 달라지므로 높이는 다시 쌓아야 한다. 아래 있던 것부터 순서대로
- * 빼서 제 자리 표면 위에 다시 얹으면 더미의 생김새가 그대로 남는다.
+ * 같은 칸에 여러 장이 오면 그 칸에서 정확히 포개어 쌓는다. 방위도 전부 0 으로
+ * 맞춘다. 한 장이라도 비스듬하면 그 기둥은 포개지지 않는다.
  * @returns {number} 정렬한 장수
  */
 export function alignAll(pile) {
   const live = pile.tiles.filter(t => t.state === 'pile');
   if (!live.length) return 0;
 
+  const cw = TILE3D.hx * 2 + ALIGN_GAP, ch = TILE3D.hy * 2 + ALIGN_GAP;
+  const cols = Math.max(1, Math.floor(pile.halfX * 2 / cw));
+  const rows = Math.max(1, Math.floor(pile.halfZ * 2 / ch));
+  const x0 = -(cols - 1) * cw / 2;             // 첫 칸의 중심
+  const z0 = -(rows - 1) * ch / 2;
+  const stack = new Int32Array(cols * rows);   // 칸마다 몇 장 쌓였는지
+
   // 아래에 있던 것이 아래로 간다 — 쌓인 순서가 곧 더미의 모양이다
   live.sort((a, b) => a.body.p.y - b.body.p.y);
-  const spots = live.map((tile) => {
-    const yaw = yawOf(tile.body.R);
-    // 눕힌 타일이 차지하는 반너비. 비스듬히 놓이면 그만큼 더 넓다.
-    const cos = Math.abs(Math.cos(yaw)), sin = Math.abs(Math.sin(yaw));
-    const ex = cos * TILE3D.hx + sin * TILE3D.hy;
-    const ez = sin * TILE3D.hx + cos * TILE3D.hy;
-    return {
-      tile, yaw,
-      x: clamp(tile.body.p.x, -pile.halfX + ex + 0.02, pile.halfX - ex - 0.02),
-      z: clamp(tile.body.p.z, -pile.halfZ + ez + 0.02, pile.halfZ - ez - 0.02),
-      y: 0,
-    };
-  });
+  for (const tile of live) {
+    const cx = clamp(Math.round((tile.body.p.x - x0) / cw), 0, cols - 1);
+    const cz = clamp(Math.round((tile.body.p.z - z0) / ch), 0, rows - 1);
+    const layer = stack[cz * cols + cx]++;
 
-  // 전부 들어낸 다음 하나씩 얹는다. 그래야 표면 높이가 이미 놓인 것만 센다.
-  for (const spot of spots) {
-    removeBody(pile.world, spot.tile.body);
-    spot.tile.body = null;
-  }
-  const placed = [];
-  for (const spot of spots) {
-    spot.y = restHeight(placed, spot) + TILE3D.hz;
+    removeBody(pile.world, tile.body);
     const body = addBody(pile.world, {
-      p: v3(spot.x, spot.y, spot.z),
-      q: qMul(qAxisAngle(v3(0, 1, 0), spot.yaw), FACE_UP),
+      p: v3(x0 + cx * cw, TILE3D.hz + layer * TILE3D.hz * 2, z0 + cz * ch),
+      q: FACE_UP,
       hx: TILE3D.hx, hy: TILE3D.hy, hz: TILE3D.hz,
     });
-    body.tile = spot.tile;
-    spot.tile.body = body;
-    spot.tile.state = 'pile';
-    placed.push(spot);
+    body.tile = tile;
+    tile.body = body;
   }
-  // 자리를 다 잡아 놓았으므로 그대로 재운다. 물리에 맡기면 남의 모서리에 걸친
-  // 타일이 도로 넘어져, 무늬를 다 보여 준다는 약속이 깨진다.
+  // 자리를 다 잡아 놓았으므로 그대로 재운다. 물리에 맡기면 기둥이 무너져
+  // 무늬를 다 보여 준다는 약속이 깨진다.
   freeze(pile.world);
   pile.settleT = 0;
   return live.length;
-}
-
-/**
- * 눕힌 타일이 놓일 높이. 눕힌 것끼리는 전부 수평이라 발자국이 겹치는지만 보면
- * 되고, 겹치면 그 위에 얹는다. 광선 몇 대로 표면을 재면 좁은 틈을 놓쳐
- * 아래 타일을 뚫고 들어간다 — 여기서는 한 장도 안 겹쳐야 한다.
- */
-function restHeight(placed, spot) {
-  let h = 0;
-  for (const o of placed) {
-    if (o.y + TILE3D.hz <= h) continue;                          // 이미 더 높은 것을 찾았다
-    if (Math.abs(o.x - spot.x) > 2.4 || Math.abs(o.z - spot.z) > 2.4) continue;
-    if (!footprintsOverlap(spot, o)) continue;
-    h = o.y + TILE3D.hz;
-  }
-  return h;
-}
-
-/**
- * 눕힌 타일 둘의 발자국(회전한 직사각형)이 겹치는가 — 2D SAT, 축 네 개.
- * 눕힌 타일의 발자국은 로컬 x(가로 hx)와 로컬 y(세로 hy)가 수평면에 누운 것이다.
- */
-function footprintsOverlap(a, b) {
-  const dx = b.x - a.x, dz = b.z - a.z;
-  // 방위 yaw 인 타일의 두 축 (수평면). 로컬 x 는 (cos, -sin), 로컬 y 는 (sin, cos).
-  const axesOf = (yaw) => {
-    const c = Math.cos(yaw), s = Math.sin(yaw);
-    return [[c, -s], [s, c]];
-  };
-  const reach = (o, ax, az) => {
-    const c = Math.cos(o.yaw), s = Math.sin(o.yaw);
-    return Math.abs(c * ax - s * az) * TILE3D.hx + Math.abs(s * ax + c * az) * TILE3D.hy;
-  };
-  for (const [ax, az] of [...axesOf(a.yaw), ...axesOf(b.yaw)]) {
-    if (Math.abs(dx * ax + dz * az) >= reach(a, ax, az) + reach(b, ax, az)) return false;
-  }
-  return true;
-}
-
-/** 앞면이 향한 방위(y축 회전). 눕혀도 무늬가 돌아가지 않게 그대로 물려준다. */
-function yawOf(R) {
-  // 로컬 +x 를 수평면에 눕혀 방위를 읽는다 (앞면이 어디를 보든 상관없다)
-  return Math.atan2(-R[6], R[0]);
 }
 
 /** 무늬가 kind 인 타일을 위에 있는 것부터 n 장 고른다 (빼내기). */

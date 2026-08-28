@@ -185,6 +185,10 @@ function quadArea(px, py) {
 function drawFace(ctx, f) {
   ctx.save();
   setQuadTransform(ctx, f);
+  // 아틀라스의 v 축은 아래로 향하는데 타일의 로컬 +y 는 위를 본다. 뒤집어 얹지
+  // 않으면 무늬가 위아래로 거울이 된다 — 中·통수처럼 대칭인 것은 티가 안 나고
+  // 東·萬 에서 드러난다.
+  ctx.transform(1, 0, 0, -1, 0, 1);
   // 원근 왜곡은 면 안에서 무시한다. 타일이 작아 눈에 띄지 않는다.
   // multiply 로 얹으면 아래 깔린 음영이 그대로 무늬에도 먹는다.
   ctx.globalCompositeOperation = 'multiply';
