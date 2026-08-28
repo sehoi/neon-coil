@@ -92,6 +92,52 @@ export function drawPile(ctx, cam, tiles, hot = null) {
   return list.length;
 }
 
+/**
+ * 잠든 더미는 다시 그리지 않는다.
+ *
+ * 300장이면 칠할 면이 900개가 넘고, 그중 200개는 무늬까지 얹는다 —
+ * 실측으로 한 프레임에 57ms 다 (18프레임/초). 그런데 더미가 잠들어 있는 동안은
+ * **그림이 한 픽셀도 안 바뀐다.** 그래서 한 번 그려 두고 그 다음부터는 복사만 한다.
+ * 물리가 잠들면 계산을 멈추는 것과 같은 이야기다.
+ *
+ * 캐시는 `world.rev` 로 판단한다 — 몸이 늘거나 줄거나 한 번이라도 움직이면 오르는 값이다.
+ * 마우스가 올라간 타일(hot)과 화면 배율도 그림을 바꾸므로 열쇠에 같이 넣는다.
+ * 판이 바뀌면(새 판·이어하기) rev 가 처음부터 다시 세지고 카메라도 옮겨 가므로,
+ * 더미 자체가 같은 것인지도 함께 본다.
+ *
+ * @param rect 캐시를 뜰 화면 사각형 (LAYOUT.board)
+ * @param dpr  지금 캔버스 배율
+ */
+export function drawPileCached(ctx, cam, pile, hot, rect, dpr) {
+  // 깨어 있으면 어차피 매 프레임 달라진다 — 캐시를 만드는 값이 더 든다
+  if (!pile.world.asleep) { cache.key = ''; return drawPile(ctx, cam, pile.tiles, hot); }
+
+  const key = `${pile.world.rev}|${hot ? hot.id : -1}|${dpr}|${SETTINGS.glow ? 1 : 0}`;
+  const w = Math.ceil(rect.w * dpr), h = Math.ceil(rect.h * dpr);
+  if (cache.pile !== pile || cache.key !== key ||
+      !cache.canvas || cache.canvas.width !== w || cache.canvas.height !== h) {
+    if (!cache.canvas) {
+      cache.canvas = document.createElement('canvas');
+      cache.ctx = cache.canvas.getContext('2d');
+    }
+    if (cache.canvas.width !== w || cache.canvas.height !== h) {
+      cache.canvas.width = w; cache.canvas.height = h;
+    }
+    const c = cache.ctx;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.clearRect(0, 0, w, h);
+    // 화면과 같은 좌표계로 그린다. 사각형만큼 밀어 두면 카메라는 아무것도 몰라도 된다.
+    c.setTransform(dpr, 0, 0, dpr, -rect.x * dpr, -rect.y * dpr);
+    cache.faces = drawPile(c, cam, pile.tiles, hot);
+    cache.key = key;
+    cache.pile = pile;
+  }
+  ctx.drawImage(cache.canvas, rect.x, rect.y, rect.w, rect.h);
+  return cache.faces;
+}
+
+const cache = { key: '', pile: null, canvas: null, ctx: null, faces: 0 };
+
 const c2v = { x: 0, y: 0, z: 0 };
 const c2s = { x: 0, y: 0, d: 0 };
 

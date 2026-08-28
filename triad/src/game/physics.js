@@ -33,6 +33,9 @@ export function createWorld({ halfX = 4, halfZ = 5, gravity = -26, substeps = 6 
     asleep: false,
     quietT: 0,
     steps: 0,
+    // 그림이 달라졌는지 알리는 값. 몸이 늘거나 줄거나 한 번이라도 움직이면 오른다.
+    // 렌더러는 이 값이 그대로면 잠든 더미를 다시 그리지 않고 지난 그림을 복사한다.
+    rev: 0,
   };
 }
 
@@ -64,6 +67,7 @@ export function addBody(world, { p, q, hx, hy, hz, density = 1 }) {
   qToMat(body.q, body.R);
   world.bodies.push(body);
   world.asleep = false;
+  world.rev++;
   return body;
 }
 
@@ -80,11 +84,13 @@ export function freeze(world) {
     b.sleepT = SLEEP_TIME;
   }
   world.asleep = true;
+  world.rev++;
 }
 
 export function removeBody(world, body) {
   const i = world.bodies.indexOf(body);
   if (i >= 0) world.bodies.splice(i, 1);
+  world.rev++;
   // 들어낸 자리 주변만 깨운다. 넓게 깨울수록 더미가 크게 무너지고,
   // 무너질 때마다 타일이 엎어져 판이 읽기 어려워진다.
   wakeAll(world, body.p, 2.0);
@@ -208,6 +214,7 @@ export function step(world, dt) {
   }
   world.asleep = allAsleep;
   world.steps++;
+  world.rev++;
   return true;
 }
 

@@ -6,12 +6,13 @@
 
 import { seed } from '../src/core/rng.js';
 import { LAYOUT } from '../src/config.js';
-import { levelSpec, startingItems, clearReward, TRAY_CAP } from '../src/data/tuning.js';
+import { levelSpec, startingItems, clearReward, boxHeight, TRAY_CAP } from '../src/data/tuning.js';
 import {
   createSession, update, pickTile,
   useFlip, useWithdraw, useShuffle,
 } from '../src/game/session.js';
 import { visibleFront, visibleTiles, remaining } from '../src/game/pile.js';
+import { scoreToGold } from '../src/game/wallet.js';
 import { createCamera, frameBox, screenRay, projectPoint } from '../src/render/camera.js';
 
 const LEVELS = Number(process.argv[2]) || 12;
@@ -20,7 +21,7 @@ const DT = 1 / 60;
 
 function makeCam(pile) {
   const cam = createCamera(LAYOUT.board);
-  frameBox(cam, pile.halfX, pile.halfZ, 2.8, Math.PI / 2);   // main.js 와 같은 시점
+  frameBox(cam, pile.halfX, pile.halfZ, boxHeight(pile.spec), Math.PI / 2);   // main.js 와 같은 시점
   return cam;
 }
 
@@ -112,19 +113,20 @@ function play(level, s) {
   return session;
 }
 
-console.log('레벨  타일  세트  무늬 |  클리어  평균 집기  눈감고 집기  쓴 아이템  손 못 댐');
+console.log('레벨  타일  세트  무늬 |  클리어  평균 집기  눈감고 집기  쓴 아이템   점수   골드  손 못 댐');
 let ok = true;
 for (let lv = 1; lv <= LEVELS; lv++) {
   const spec = levelSpec(lv);
-  let wins = 0, picks = 0, blocked = 0, stuck = 0, used = 0;
+  let wins = 0, picks = 0, blocked = 0, stuck = 0, used = 0, score = 0;
   for (let r = 0; r < RUNS; r++) {
     const s = play(lv, lv * 7919 + r * 104729);
-    if (s.state === 'won') wins++;
+    if (s.state === 'won') { wins++; score += s.total; }
     if (s.state === 'play') stuck++;          // 봇이 손을 못 댄 판
     picks += s.stats.picks;
     blocked += s.stats.blind;
     used += s.stats.powers + s.stats.undos;
   }
+  const avgScore = wins ? Math.round(score / wins) : 0;   // 깬 판의 평균 점수
   if (stuck) ok = false;
   console.log(
     String(lv).padStart(3) + String(spec.tiles).padStart(6) + String(spec.sets).padStart(6) +
@@ -133,6 +135,7 @@ for (let lv = 1; lv <= LEVELS; lv++) {
     String((picks / RUNS).toFixed(0)).padStart(10) +
     String((blocked / RUNS).toFixed(1)).padStart(12) +
     String((used / RUNS).toFixed(1)).padStart(10) +
-    String(stuck).padStart(7));
+    String(avgScore).padStart(7) + String(scoreToGold(avgScore)).padStart(7) +
+    String(stuck).padStart(9));
 }
 console.log(ok ? '\n막힌 판 없음 — 봇이 모든 판을 끝까지 뒀다.' : '\n주의: 봇이 손을 못 댄 판이 있다.');
