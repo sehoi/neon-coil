@@ -4,7 +4,7 @@
 import { W, IS_TOUCH } from '../config.js';
 import { SCORE } from '../data/tuning.js';
 import { text, button, panel, dim, fmtTime } from './widgets.js';
-import { PANEL, CLEAR_PANEL, stackedButtons } from './rects.js';
+import { PANEL, CLEAR_PANEL, OVER_PANEL, stackedButtons } from './rects.js';
 import { TILE } from '../data/tuning.js';
 import { drawTile } from '../render/tiles.js';
 import { freeReady, price } from '../game/wallet.js';
@@ -181,44 +181,19 @@ function canAffordRevive(save) {
 }
 
 export function overScreen(ctx, session, save, rank) {
+  const P = OVER_PANEL;
   dim(ctx);
-  panel(ctx, PANEL, { accent: 'rgba(255,77,109,0.4)' });
+  panel(ctx, P, { accent: 'rgba(255,77,109,0.4)' });
 
-  text(ctx, '트레이가 찼다', W / 2, PANEL.y + 92, {
+  text(ctx, '트레이가 찼다', W / 2, P.y + 88, {
     size: 44, color: '#ff4d6d', align: 'center', weight: '700', glow: 20,
   });
-  text(ctx, `레벨 ${session.level} 에서 끝 · ${session.total}점`, W / 2, PANEL.y + 146, {
+  text(ctx, `레벨 ${session.level} 에서 끝 · ${session.total}점`, W / 2, P.y + 140, {
     size: 23, color: 'rgba(220,228,246,0.78)', align: 'center', weight: '600',
   });
   if (rank) {
-    text(ctx, `이번 판 ${rank}위`, W / 2, PANEL.y + 184, {
+    text(ctx, `이번 판 ${rank}위`, W / 2, P.y + 178, {
       size: 20, color: '#ffd166', align: 'center', weight: '700',
-    });
-  }
-
-  // 이번 판은 아직 기록에 넣지 않았다 (이어하기를 고를 수 있으므로).
-  // 그래도 순위표에는 자리를 잡아 보여줘야 "1위인데 기록이 없다"는 모순이 안 생긴다.
-  const rows = save.board.slice(0, 5).map(e => ({ level: e.level, score: e.score, mine: false }));
-  if (rank) rows.splice(rank - 1, 0, { level: session.level, score: session.total, mine: true });
-
-  rows.slice(0, 5).forEach((e, i) => {
-    const yy = PANEL.y + 250 + i * 44;
-    text(ctx, `${i + 1}`, PANEL.x + 52, yy, {
-      size: 20, color: e.mine ? '#ffd166' : 'rgba(200,208,228,0.5)', weight: '700',
-    });
-    text(ctx, `레벨 ${e.level}`, PANEL.x + 96, yy, {
-      size: 20, color: e.mine ? '#ffffff' : 'rgba(220,228,246,0.7)', weight: '600',
-    });
-    text(ctx, e.mine ? '이번 판' : '', PANEL.x + 230, yy, {
-      size: 18, color: '#ffd166', weight: '600',
-    });
-    text(ctx, `${e.score}점`, PANEL.x + PANEL.w - 52, yy, {
-      size: 20, color: e.mine ? '#ffd166' : 'rgba(220,228,246,0.7)', align: 'right', weight: '600',
-    });
-  });
-  if (!rows.length) {
-    text(ctx, '아직 기록이 없다', W / 2, PANEL.y + 270, {
-      size: 20, color: 'rgba(200,208,228,0.45)', align: 'center', weight: '500',
     });
   }
 
@@ -237,8 +212,50 @@ export function overScreen(ctx, session, save, rank) {
   menu.push(['again', { label: '이 레벨 다시', accent: '#9bb0ff', active: !canRevive }]);
   menu.push(['quit', { label: '처음으로', accent: '#ff4d6d' }]);
 
-  const slots = stackedButtons(menu.length, { h: 76, gap: 12 });
+  // 버튼 자리를 **먼저** 잡는다. 순위표는 그러고 남은 자리에만 그린다 —
+  // 줄 수를 고정해 두면 버튼이 하나 늘어나는 순간(이어하기가 붙는 판) 글자가
+  // 버튼 위로 겹쳐 찍힌다.
+  const slots = stackedButtons(menu.length, { y: P.y + P.h - 34, h: 76, gap: 12, box: P });
+  board(ctx, P, save, session, rank, P.y + (rank ? 216 : 190), slots[0].y - 18);
+
   const rects = {};
   menu.forEach(([name, opts], i) => { rects[name] = button(ctx, slots[i], opts); });
   return rects;
+}
+
+/**
+ * 순위표 — top 부터 bottom 사이에 들어가는 줄만 그린다.
+ *
+ * 이번 판은 아직 기록에 넣지 않았다(이어하기를 고를 수 있으므로). 그래도 순위표에는
+ * 자리를 잡아 보여줘야 "1위인데 기록이 없다"는 모순이 안 생긴다.
+ */
+function board(ctx, P, save, session, rank, top, bottom) {
+  const ROW = 42;
+  const rows = save.board.slice(0, 5).map(e => ({ level: e.level, score: e.score, mine: false }));
+  if (rank) rows.splice(Math.min(rank - 1, rows.length), 0,
+    { level: session.level, score: session.total, mine: true });
+
+  const fit = Math.max(0, Math.floor((bottom - top) / ROW));
+  if (!rows.length) {
+    text(ctx, '아직 기록이 없다', W / 2, (top + bottom) / 2, {
+      size: 20, color: 'rgba(200,208,228,0.45)', align: 'center', weight: '500',
+    });
+    return;
+  }
+
+  rows.slice(0, fit).forEach((e, i) => {
+    const yy = top + 22 + i * ROW;
+    text(ctx, `${i + 1}`, P.x + 44, yy, {
+      size: 20, color: e.mine ? '#ffd166' : 'rgba(200,208,228,0.5)', weight: '700',
+    });
+    text(ctx, `레벨 ${e.level}`, P.x + 84, yy, {
+      size: 20, color: e.mine ? '#ffffff' : 'rgba(220,228,246,0.7)', weight: '600',
+    });
+    if (e.mine) {
+      text(ctx, '이번 판', P.x + 210, yy, { size: 18, color: '#ffd166', weight: '600' });
+    }
+    text(ctx, `${e.score}점`, P.x + P.w - 44, yy, {
+      size: 20, color: e.mine ? '#ffd166' : 'rgba(220,228,246,0.7)', align: 'right', weight: '600',
+    });
+  });
 }

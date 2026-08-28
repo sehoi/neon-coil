@@ -12,7 +12,7 @@ import {
   createSession, update as updateSession, pickTile, serializeSession, restoreSession,
   useUndo, useWithdraw, useShuffle, useFlip, revive,
 } from './game/session.js';
-import { pickRay, remaining, visibleFront, visibleTiles as visibleAny } from './game/pile.js';
+import { pickRay, remaining, visibleFront, visibleTiles as visibleAny, finishAlign } from './game/pile.js';
 import { createCamera, frameBox, screenRay, projectPoint } from './render/camera.js';
 import { drawPileCached, drawTable } from './render/pile3d.js';
 import { drawBackground, drawTrayTiles, drawComboFloat, trayBurstPoint } from './render/renderer.js';
@@ -79,8 +79,9 @@ function useSession(session) {
 function saveProgress(force = false) {
   const s = game.session;
   if (s.state !== 'play' || s.pouring) return;
-  // 정렬해 옮기는 중에는 적지 않는다. 그 순간 자세는 아직 가는 길 위에 있다.
-  if (s.pile.align) return;
+  // 정렬해 옮기는 중이면 그 순간 자세는 아직 가는 길 위에 있다.
+  // 급할 때(탭을 닫거나 타이틀로 나갈 때)는 끝까지 옮겨 놓고 적는다.
+  if (s.pile.align) { if (!force) return; finishAlign(s.pile); }
   // 무너지는 중에 적으면 되살릴 때 속도를 버리므로 타일이 조금 어긋난다.
   // 급할 때(탭을 닫을 때)가 아니면 더미가 멈춘 다음에 적는다.
   if (!force && !s.pile.world.asleep) return;
@@ -240,7 +241,19 @@ function stepPause() {
   if (consumeRect(r.resume) || key('Escape') || key('KeyP')) { game.state = 'play'; sfx('ui'); }
   else if (consumeRect(r.shop)) { openShop('pause'); }
   else if (consumeRect(r.restart)) { sfx('ui'); startRun(game.session.level); }
-  else if (consumeRect(r.quit)) { sfx('ui'); endRun(); game.state = 'title'; }
+  else if (consumeRect(r.quit)) { sfx('ui'); parkRun(); }
+}
+
+/**
+ * 일시정지에서 타이틀로 — **판은 그대로 둔다.**
+ *
+ * 예전에는 여기서도 endRun 을 불러 기록에 올리고 저장을 지웠다. 그런데 이 버튼은
+ * 진 것도 그만두는 것도 아니다. 잠깐 나갔다 오는 길이라, 타이틀의 `이어하기` 로
+ * 돌아올 수 있어야 한다. 기록은 판이 진짜로 끝날 때(게임오버) 올린다.
+ */
+function parkRun() {
+  saveProgress(true);
+  game.state = 'title';
 }
 
 function stepClear() {

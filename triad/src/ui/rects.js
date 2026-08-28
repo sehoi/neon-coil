@@ -28,6 +28,9 @@ export const PANEL = { x: 56, y: 300, w: W - 112, h: 680 };
 /** 클리어 화면은 보상까지 실어야 해서 한 칸 더 크다. */
 export const CLEAR_PANEL = { x: 48, y: 240, w: W - 96, h: 762 };
 
+/** 게임오버도 마찬가지 — 순위표와 버튼 넉 줄이 같이 들어가야 한다. */
+export const OVER_PANEL = { x: 48, y: 240, w: W - 96, h: 762 };
+
 export function stackedButtons(n, { y = PANEL.y + PANEL.h - 40, h = 84, gap = 16, box = PANEL } = {}) {
   const w = box.w - 96;
   const x = box.x + 48;
