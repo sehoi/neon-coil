@@ -10,6 +10,7 @@ import {
   v3, add, sub, scale, dot, cross, len2, norm,
   qMul, qNorm, qIntegrate, mat3, qToMat, mApply, mApplyT, axis,
 } from '../core/v3.js';
+import { PHYS } from '../data/tuning.js';
 
 const MARGIN = 0.06;        // 이 거리 안이면 접촉 후보로 잡는다 (관통 예방)
 const MAX_PUSH = 0.12;      // 서브스텝 한 번에 밀어내는 최대 거리
@@ -17,13 +18,14 @@ const MU = 0.85;            // 정지 마찰 계수 (높을수록 더미가 덜 
 // 속도 보정은 한 번으로 부족하다. 한 쌍에 접점이 넷이면 서로 물려서
 // 한 바퀴로는 상대 속도가 남고, 그 잔량이 더미를 계속 흔든다.
 const VEL_ITERS = 4;
-const SLEEP_LIN = 0.13;     // 이 이하로 느려지고
-const SLEEP_ANG = 0.32;
-const SLEEP_TIME = 0.3;    // 이만큼 유지되면 잔다
+// 재우기 문턱은 손맛에 딸린 값이라 tuning.js 에 있다.
+const SLEEP_LIN = PHYS.sleep.lin;
+const SLEEP_ANG = PHYS.sleep.ang;
+const SLEEP_TIME = PHYS.sleep.time;
 
 let nextId = 1;
 
-export function createWorld({ halfX = 4, halfZ = 5, gravity = -26, substeps = 6 } = {}) {
+export function createWorld({ halfX = 4, halfZ = 5, gravity = PHYS.gravity, substeps = 6 } = {}) {
   return {
     bodies: [],
     halfX, halfZ,
@@ -61,6 +63,8 @@ export function addBody(world, { p, q, hx, hy, hz, density = 1 }) {
     // 갓 만든 몸도 prev 는 지금 자리여야 한다. 원점으로 두면, 한 스텝도 안 밟고
     // 잠든 몸의 마찰 계산이 "원점에서 여기까지 미끄러졌다"고 읽는다.
     prevP: v3(p.x, p.y, p.z), prevQ: { x: q.x, y: q.y, z: q.z, w: q.w },
+    // 한 프레임 전체로 얼마나 옮겨 갔는지 — 재울지 말지는 이걸로 정한다 (step 참고)
+    frameP: v3(p.x, p.y, p.z), frameQ: { x: q.x, y: q.y, z: q.z, w: q.w },
     sleeping: false,
     sleepT: 0,
   };
@@ -126,6 +130,16 @@ export function step(world, dt) {
 
   for (const b of bodies) qToMat(b.q, b.R);
 
+  // 스텝을 시작한 자리를 적어 둔다. 서브스텝이 만들어 낸 속도(v = Δp/h)는
+  // 접촉을 밀어낸 양이 그대로 섞여 있어 실제로 움직이는지와 상관이 적다 —
+  // h 가 1/360 초라 0.001 만 밀려도 초속 0.36 으로 읽힌다. 재울지 말지는
+  // "이 프레임에 정말로 얼마나 옮겨 갔나"로 정한다 (아래 재우기 참고).
+  for (const b of bodies) {
+    if (b.sleeping) continue;
+    b.frameP.x = b.p.x; b.frameP.y = b.p.y; b.frameP.z = b.p.z;
+    b.frameQ.x = b.q.x; b.frameQ.y = b.q.y; b.frameQ.z = b.q.z; b.frameQ.w = b.q.w;
+  }
+
   // 어떤 쌍을 볼지는 스텝당 한 번만 고른다(AABB 스윕). 실제 접촉면은
   // 서브스텝마다 다시 만든다 — 앵커를 한 스텝 내내 고정하면 그게 핀처럼 작용해
   // 더미에 에너지를 계속 밀어 넣는다. 이것 하나로 잔떨림이 한 자릿수로 준다.
@@ -174,14 +188,15 @@ export function step(world, dt) {
   // 감쇠
   for (const b of bodies) {
     if (b.sleeping) continue;
-    b.v.x *= 0.995; b.v.y *= 0.995; b.v.z *= 0.995;
-    b.w.x *= 0.97; b.w.y *= 0.97; b.w.z *= 0.97;
+    b.v.x *= PHYS.damp.v; b.v.y *= PHYS.damp.v; b.v.z *= PHYS.damp.v;
+    b.w.x *= PHYS.damp.w; b.w.y *= PHYS.damp.w; b.w.z *= PHYS.damp.w;
 
-    // 더미가 다 무너진 뒤에도 타일들이 아주 느리게 기어다닌다. 눈에는 안 보이지만
-    // 그 때문에 영영 잠들지 않으므로, 느린 것은 더 세게 잡아 세운다.
-    if (len2(b.v) < 0.12 && len2(b.w) < 0.5) {
-      b.v.x *= 0.82; b.v.y *= 0.82; b.v.z *= 0.82;
-      b.w.x *= 0.82; b.w.y *= 0.82; b.w.z *= 0.82;
+    // 한 장을 빼면 그 자리 둘레가 통째로 깨어나 초속 1~2 로 몇 초씩 흐른다.
+    // 떨어지는 타일(초속 3 이상)은 건드리지 않고 이 "흐르는" 구간만 세게 잡는다.
+    if (len2(b.v) < PHYS.slow.v && len2(b.w) < PHYS.slow.w) {
+      const k = PHYS.slow.mul;
+      b.v.x *= k; b.v.y *= k; b.v.z *= k;
+      b.w.x *= k; b.w.y *= k; b.w.z *= k;
     }
   }
 
@@ -193,16 +208,20 @@ export function step(world, dt) {
   let maxV = 0, maxW = 0;
   for (const b of bodies) {
     if (b.sleeping) continue;
-    maxV = Math.max(maxV, len2(b.v));
-    maxW = Math.max(maxW, len2(b.w));
+    const m = travel(b, dt);
+    b.netV = m.v; b.netW = m.w;
+    maxV = Math.max(maxV, m.v);
+    maxW = Math.max(maxW, m.w);
   }
-  world.quietT = (maxV < 0.02 && maxW < 0.1) ? world.quietT + dt : 0;
-  const forceSleep = world.quietT > 1.2;
+  // 이 프레임에 가장 많이 움직인 값. 게임이 "이제 그만 세워도 되나"를 볼 때 쓴다.
+  world.maxV = maxV; world.maxW = maxW;
+  world.quietT = (maxV < PHYS.quiet.v && maxW < PHYS.quiet.w) ? world.quietT + dt : 0;
+  const forceSleep = world.quietT > PHYS.quiet.time;
 
   let allAsleep = true;
   for (const b of bodies) {
     if (b.sleeping) continue;
-    const still = len2(b.v) < SLEEP_LIN * SLEEP_LIN && len2(b.w) < SLEEP_ANG * SLEEP_ANG;
+    const still = b.netV < SLEEP_LIN && b.netW < SLEEP_ANG;
     b.sleepT = still ? b.sleepT + dt : 0;
     if (forceSleep || b.sleepT > SLEEP_TIME) {
       b.sleeping = true;
@@ -216,6 +235,17 @@ export function step(world, dt) {
   world.steps++;
   world.rev++;
   return true;
+}
+
+/** 이 프레임에 실제로 옮겨 간 거리와 각도를 속도로 환산한다. */
+function travel(b, dt) {
+  const dx = b.p.x - b.frameP.x, dy = b.p.y - b.frameP.y, dz = b.p.z - b.frameP.z;
+  const fq = b.frameQ;
+  const dq = qMul(b.q, { x: -fq.x, y: -fq.y, z: -fq.z, w: fq.w });
+  return {
+    v: Math.hypot(dx, dy, dz) / dt,
+    w: 2 * Math.hypot(dq.x, dq.y, dq.z) / dt,
+  };
 }
 
 // ── 접촉 만들기 ───────────────────────────────────────────────────────────

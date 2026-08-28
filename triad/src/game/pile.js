@@ -5,7 +5,7 @@
 
 import { rnd, shuffle } from '../core/rng.js';
 import { v3, qAxisAngle, qMul, qNorm, qToMat } from '../core/v3.js';
-import { TILE3D, POUR, BOX_RATIO } from '../data/tuning.js';
+import { TILE3D, POUR, BOX_RATIO, PHYS } from '../data/tuning.js';
 import { chooseKinds } from '../data/symbols.js';
 import {
   createWorld, addBody, removeBody, step as stepWorld, raycast, freeze, wakeAll,
@@ -169,6 +169,8 @@ function surfaceAt(pile, x, z) {
 export function stepPile(pile, dt) {
   if (pile.align) { stepAlign(pile, dt); return true; }
 
+  // 프레임이 길어져도 물리는 그만큼만 밟는다 (PHYS.maxStep 참고)
+  dt = Math.min(dt, PHYS.maxStep);
   const moved = stepWorld(pile.world, dt);
   if (!moved) { pile.settleT = 0; return false; }
 
@@ -176,7 +178,9 @@ export function stepPile(pile, dt) {
   // 프레임마다 몇 ms 를 계속 쓰는 것이 아깝다.
   if (pile.poured >= pile.spec.tiles && !pile.queue.length) {
     pile.settleT += dt;
-    if (pile.settleT > POUR.settleCap) freeze(pile.world);
+    // 오래 들썩이면 세운다. 다만 아직 진짜로 떨어지는 타일이 있으면 기다린다 —
+    // 그 상태로 얼리면 타일이 공중에 박제된다.
+    if (pile.settleT > POUR.settleCap && pile.world.maxV < PHYS.calm) freeze(pile.world);
   }
   return true;
 }
@@ -336,6 +340,11 @@ function stepAlign(pile, dt) {
   pile.align = null;
   wakeAll(pile.world, v3(0, 0, 0), Infinity);  // 이제부터는 물리가 맡는다
   pile.settleT = 0;
+}
+
+/** 옮기던 것을 지금 당장 끝낸다 (저장처럼 중간 자세를 남기면 안 되는 자리에서). */
+export function finishAlign(pile) {
+  if (pile.align) stepAlign(pile, ALIGN_TIME);
 }
 
 /** 몸을 그 자리에 그대로 놓는다 (속도는 건드리지 않는다). */
