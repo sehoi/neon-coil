@@ -511,6 +511,11 @@ export function serializePile(pile) {
       // 부르는 쪽(serializeSession)이 이걸 보고 저장을 건너뛴다.
       const b = t.body;
       if (!b) return null;
+      // 좌표가 NaN·Infinity 면 JSON 이 그것을 **null 로 적는다.** 그 판을 되살리면
+      // null 은 0 으로 읽혀 온 타일이 원점에 겹쳐 쌓인다 — 손댈 수 없는 탑이다.
+      // 그런 판은 적지 않는다 (다 쏟은 뒤 검사에서 어차피 다시 쏟게 된다).
+      if (!isFinite(b.p.x) || !isFinite(b.p.y) || !isFinite(b.p.z) ||
+          !isFinite(b.q.x) || !isFinite(b.q.y) || !isFinite(b.q.z) || !isFinite(b.q.w)) return null;
       row.push(R4(b.p.x), R4(b.p.y), R4(b.p.z), R4(b.q.x), R4(b.q.y), R4(b.q.z), R4(b.q.w));
     }
     return row;
@@ -520,6 +525,7 @@ export function serializePile(pile) {
 /**
  * 적어 둔 더미를 되살린다. 속도는 버린다 — 저장 순간 공중에 있었더라도
  * 그 자리에서 다시 떨어지면 그만이고, 그 편이 재현하기 쉽고 안전하다.
+ * @returns 적힌 값이 성하지 않으면 null (부르는 쪽이 새 판을 연다)
  */
 export function restorePile(pile, rows, asleep = false) {
   for (let id = 0; id < rows.length; id++) {
@@ -527,6 +533,10 @@ export function restorePile(pile, rows, asleep = false) {
     const kind = row[0];
     const state = row[1] === 0 ? 'pile' : row[1] === 1 ? 'tray' : 'gone';
     const tile = { id, kind, body: null, state };
+    // 적힌 값이 수가 아니면(옛 저장이 NaN 을 null 로 적어 둔 경우) 그 판은 못 믿는다.
+    if (state === 'pile' && !row.slice(2, 9).every(v => typeof v === 'number' && isFinite(v))) {
+      return null;
+    }
     if (state === 'pile') {
       const body = addBody(pile.world, {
         p: v3(row[2], row[3], row[4]),

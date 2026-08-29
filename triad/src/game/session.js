@@ -187,7 +187,7 @@ export function restoreSession(data, items = startingItems()) {
 
     const session = createSession(data.level, data.total, data.runTime, items);
     session.pile.tiles.length = 0;
-    restorePile(session.pile, data.tiles, !!data.asleep);
+    if (!restorePile(session.pile, data.tiles, !!data.asleep)) return null;
     session.pouring = false;
 
     // 적힌 자리가 손댈 수 없는 모양이면(한 줄로 몰렸거나 NaN) 이어받지 않는다.
