@@ -379,6 +379,38 @@ export function topOfKind(pile, kind, n) {
     .slice(0, n);
 }
 
+/**
+ * 판이 성한지 본다. 다 쏟고 나면 타일은 상자에 고루 퍼져 있어야 한다.
+ *
+ * 한 자리에 탑처럼 쌓였거나 좌표가 NaN 이면 그 판은 손을 댈 수가 없다 —
+ * 무늬가 안 보이니 집을 것이 없고, 아이템을 써도 그대로다. 그런 판을 그냥 두면
+ * 사람은 게임이 죽었다고 느낀다. 그래서 다시 쏟을 수 있도록 여기서 알린다.
+ *
+ * 문턱은 실측에서 한참 떨어뜨려 잡았다 — 성한 판은 상자의 90% 폭을 채우고
+ * 꼭대기가 상자 높이를 넘지 않는다. 멀쩡한 판을 다시 쏟는 쪽이 더 나쁘다.
+ *
+ * @returns {string|null} 망가졌으면 그 이유, 성하면 null
+ */
+export function pileFault(pile, boxH = 3) {
+  const live = pileTiles(pile);
+  if (live.length < 8) return null;                 // 몇 장 안 남은 판은 원래 몰려 있다
+
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity, top = -Infinity;
+  for (const t of live) {
+    const p = t.body.p;
+    if (!isFinite(p.x) || !isFinite(p.y) || !isFinite(p.z)) return '좌표가 NaN';
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.z < minZ) minZ = p.z;
+    if (p.z > maxZ) maxZ = p.z;
+    if (p.y > top) top = p.y;
+  }
+  if (maxX - minX < pile.halfX * 0.9) return '한 줄로 몰렸다 (가로)';
+  if (maxZ - minZ < pile.halfZ * 0.9) return '한 줄로 몰렸다 (세로)';
+  if (top > boxH * 2.2) return `탑처럼 쌓였다 (꼭대기 ${top.toFixed(1)})`;
+  return null;
+}
+
 // ── 조회 ──────────────────────────────────────────────────────────────────
 
 export function pileTiles(pile) {
@@ -462,7 +494,10 @@ function roomNear(stack, cols, rows, cx, cz) {
 
 const R4 = (v) => Math.round(v * 1e4) / 1e4;   // 소수 넷째 자리면 눈으로 같은 자리다
 
-/** 더미를 그대로 적어 둔다. 타일마다 무늬·상태와, 판 위에 있으면 위치·자세. */
+/**
+ * 더미를 그대로 적어 둔다. 타일마다 무늬·상태와, 판 위에 있으면 위치·자세.
+ * @returns 적을 수 없는 상태(몸 없는 타일이 있다)면 null
+ */
 export function serializePile(pile) {
   return pile.tiles.map((t) => {
     const inPile = t.state !== 'tray' && t.state !== 'gone';
@@ -470,12 +505,16 @@ export function serializePile(pile) {
     if (inPile) {
       // 다시 쏟기를 기다리는 중(몸 없음)이면 위에서 떨어뜨리는 것으로 적는다.
       // 쏟는 동안에는 저장하지 않으므로 실제로는 거의 오지 않는 길이다.
+      // 몸 없는 타일(섞기로 다시 쏟기를 기다리는 중)은 적을 자리가 없다.
+      // 예전에는 (0,4,0) 으로 적었는데, 그런 판을 되살리면 온 타일이 원점에
+      // 겹쳐 쌓여 손을 댈 수 없는 탑이 된다. 그래서 아예 적지 않는다 —
+      // 부르는 쪽(serializeSession)이 이걸 보고 저장을 건너뛴다.
       const b = t.body;
-      if (b) row.push(R4(b.p.x), R4(b.p.y), R4(b.p.z), R4(b.q.x), R4(b.q.y), R4(b.q.z), R4(b.q.w));
-      else row.push(0, 4, 0, 0, 0, 0, 1);
+      if (!b) return null;
+      row.push(R4(b.p.x), R4(b.p.y), R4(b.p.z), R4(b.q.x), R4(b.q.y), R4(b.q.z), R4(b.q.w));
     }
     return row;
-  });
+  }).reduce((out, row) => (out && row ? (out.push(row), out) : null), []);
 }
 
 /**

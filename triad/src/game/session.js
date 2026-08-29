@@ -1,11 +1,11 @@
 // 한 판의 진행 — 트레이, 매치, 점수, 도구. 그리기를 모른다.
 // 판 자체(더미)는 pile.js 가, 물리는 physics.js 가 맡는다.
 
-import { levelSpec, startingItems, TRAY_CAP, SCORE, ANIM } from '../data/tuning.js';
+import { levelSpec, startingItems, boxHeight, TRAY_CAP, SCORE, ANIM } from '../data/tuning.js';
 import { axis } from '../core/v3.js';
 import {
   createPile, pourTick, stepPile, liftTile, dropBack, retoss, alignAll, topOfKind, remaining,
-  serializePile, restorePile,
+  serializePile, restorePile, pileFault,
 } from './pile.js';
 
 /**
@@ -157,6 +157,8 @@ function win(session) {
  * 되돌리는 것이고, 트레이 순서가 그 근사치다.
  */
 export function serializeSession(session) {
+  const tiles = serializePile(session.pile);
+  if (!tiles) return null;              // 지금은 적을 수 없는 상태다 (pile.js 참고)
   return {
     level: session.level,
     total: session.total,
@@ -168,7 +170,7 @@ export function serializeSession(session) {
     stats: { ...session.stats },
     asleep: session.pile.world.asleep,
     tray: session.tray.map(t => t.id),
-    tiles: serializePile(session.pile),
+    tiles,
   };
 }
 
@@ -187,6 +189,10 @@ export function restoreSession(data, items = startingItems()) {
     session.pile.tiles.length = 0;
     restorePile(session.pile, data.tiles, !!data.asleep);
     session.pouring = false;
+
+    // 적힌 자리가 손댈 수 없는 모양이면(한 줄로 몰렸거나 NaN) 이어받지 않는다.
+    // 그 판을 되살리느니 같은 레벨을 새로 쏟는 편이 낫다 — 부르는 쪽이 그렇게 한다.
+    if (pileFault(session.pile, boxHeight(session.spec))) return null;
 
     const byId = new Map(session.pile.tiles.map(t => [t.id, t]));
     session.tray = data.tray.map(id => byId.get(id)).filter(Boolean);

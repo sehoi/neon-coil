@@ -12,7 +12,7 @@ import {
   createSession, update as updateSession, pickTile, serializeSession, restoreSession,
   useUndo, useWithdraw, useShuffle, useFlip, revive,
 } from './game/session.js';
-import { pickRay, remaining, visibleFront, visibleTiles as visibleAny, finishAlign } from './game/pile.js';
+import { pickRay, remaining, visibleFront, visibleTiles as visibleAny, finishAlign, pileFault } from './game/pile.js';
 import { createCamera, frameBox, screenRay, projectPoint } from './render/camera.js';
 import { drawPileCached, drawTable } from './render/pile3d.js';
 import { drawBackground, drawTrayTiles, drawComboFloat, trayBurstPoint } from './render/renderer.js';
@@ -85,7 +85,8 @@ function saveProgress(force = false) {
   // 무너지는 중에 적으면 되살릴 때 속도를 버리므로 타일이 조금 어긋난다.
   // 급할 때(탭을 닫을 때)가 아니면 더미가 멈춘 다음에 적는다.
   if (!force && !s.pile.world.asleep) return;
-  saveRun(serializeSession(s));
+  const snap = serializeSession(s);
+  if (snap) saveRun(snap);
 }
 
 /** 저장된 판으로 이어간다. 판 상태가 없으면(레벨 시작 표식) 그 레벨을 새로 연다. */
@@ -137,7 +138,10 @@ function step(dt) {
 
   // 쏟기가 끝난 순간과, 그 뒤로 더미가 조용할 때 이따금 적어 둔다
   if (game.state === 'play') {
-    if (game.wasPouring && !game.session.pouring) { game.wasPouring = false; saveProgress(); }
+    if (game.wasPouring && !game.session.pouring) {
+      game.wasPouring = false;
+      if (!checkBoard()) saveProgress();
+    }
     game.saveT += dt;
     if (game.saveT > 6 && game.session.pile.world.asleep) { game.saveT = 0; saveProgress(); }
   }
@@ -288,6 +292,26 @@ function startRun(level) {
 }
 
 /** 런이 실제로 끝났을 때만 기록에 남긴다 (이어하기를 고르면 남기지 않는다). */
+/**
+ * 다 쏟은 판이 손댈 수 있는 모양인지 본다. 아니면 그 자리에서 다시 쏟는다.
+ *
+ * 한 번도 재현하지 못한 모양이 사용자에게서 나왔다 — 타일이 한 줄로 몰려 탑처럼
+ * 쌓여 아무것도 집을 수 없는 판이다. 원인을 못 찾은 채로 두면 그 사람은 게임이
+ * 죽었다고 느낀다. 원인과 별개로, **그런 판은 다시 쏟는다.**
+ * 무엇이 이상했는지는 저장에 적어 둔다 (일시정지 화면에서 볼 수 있다).
+ *
+ * @returns {boolean} 다시 쏟았으면 true
+ */
+function checkBoard() {
+  const s = game.session;
+  const why = pileFault(s.pile, boxHeight(s.spec));
+  if (!why) return false;
+  save.diag = { why, level: s.level, at: Date.now() };
+  persist();
+  newSession(s.level, s.total, s.runTime + s.time);
+  return true;
+}
+
 function endRun() {
   const s = game.session;
   if (s.total > 0 && !s.recorded) {
@@ -402,7 +426,7 @@ function draw() {
 
   switch (game.state) {
     case 'title': game.screenRects = titleScreen(ctx, save, game.t, loadRun()); break;
-    case 'pause': game.screenRects = pauseScreen(ctx, s); break;
+    case 'pause': game.screenRects = pauseScreen(ctx, s, save.diag); break;
     case 'clear': game.screenRects = clearScreen(ctx, s); break;
     case 'over':  game.screenRects = overScreen(ctx, s, save, game.rank); break;
     case 'shop':  game.screenRects = shopScreen(ctx, save.wallet, game.t, game.shopNote); break;

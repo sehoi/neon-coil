@@ -82,9 +82,17 @@ function itemLine(wallet) {
   return parts.length ? parts.join(' · ') : '아이템이 없다';
 }
 
-export function pauseScreen(ctx, session) {
+export function pauseScreen(ctx, session, diag = null) {
   dim(ctx);
   panel(ctx, PANEL, { accent: 'rgba(70,240,208,0.35)' });
+
+  // 판이 이상해서 다시 쏟은 적이 있으면 그 사실을 여기 남긴다.
+  // 재현이 안 되는 종류의 사고라, 무엇이 이상했는지는 사람이 알려 줘야 한다.
+  if (diag) {
+    text(ctx, `판을 다시 쏟았다 · ${diag.why} · 레벨 ${diag.level}`, W / 2, PANEL.y + 46, {
+      size: 15, color: 'rgba(255,209,102,0.7)', align: 'center', weight: '600',
+    });
+  }
 
   text(ctx, '일시정지', W / 2, PANEL.y + 90, {
     size: 44, color: '#ffffff', align: 'center', weight: '700', glow: 16,
