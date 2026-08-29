@@ -5,16 +5,19 @@
 
 import { SETTINGS } from '../config.js';
 import { blitFace } from '../data/faces.js';
+import { TILE3D } from '../data/tuning.js';
 import { toView, project } from './camera.js';
 
 // 코너 인덱스: bit0 = +x, bit1 = +y, bit2 = +z
+// e 는 이 면의 두 변이 각각 어느 반지름을 따라 뻗는지 — 모서리를 깎을 때 쓴다
+// (idx[0]→idx[1] 이 e[0], idx[1]→idx[2] 가 e[1]).
 const FACES = [
-  { idx: [4, 5, 7, 6], n: [0, 0, 1],  kind: 'front' },
-  { idx: [1, 0, 2, 3], n: [0, 0, -1], kind: 'back' },
-  { idx: [5, 1, 3, 7], n: [1, 0, 0],  kind: 'side' },
-  { idx: [0, 4, 6, 2], n: [-1, 0, 0], kind: 'side' },
-  { idx: [6, 7, 3, 2], n: [0, 1, 0],  kind: 'side' },
-  { idx: [0, 1, 5, 4], n: [0, -1, 0], kind: 'side' },
+  { idx: [4, 5, 7, 6], n: [0, 0, 1],  kind: 'front', e: ['hx', 'hy'] },
+  { idx: [1, 0, 2, 3], n: [0, 0, -1], kind: 'back',  e: ['hx', 'hy'] },
+  { idx: [5, 1, 3, 7], n: [1, 0, 0],  kind: 'side',  e: ['hz', 'hy'] },
+  { idx: [0, 4, 6, 2], n: [-1, 0, 0], kind: 'side',  e: ['hz', 'hy'] },
+  { idx: [6, 7, 3, 2], n: [0, 1, 0],  kind: 'side',  e: ['hx', 'hz'] },
+  { idx: [0, 1, 5, 4], n: [0, -1, 0], kind: 'side',  e: ['hx', 'hz'] },
 ];
 
 const LIGHT = { x: -0.35, y: 0.86, z: 0.37 };
@@ -27,7 +30,11 @@ let faceCount = 0;
 
 function takeFace() {
   if (faceCount === facePool.length) {
-    facePool.push({ depth: 0, kind: '', tile: null, shade: 1, px: [0, 0, 0, 0], py: [0, 0, 0, 0] });
+    facePool.push({
+      depth: 0, kind: '', tile: null, shade: 1,
+      px: [0, 0, 0, 0], py: [0, 0, 0, 0],
+      fa: 0, fb: 0,          // 모서리에서 잘라 낼 비율 (변 길이 대비)
+    });
   }
   return facePool[faceCount++];
 }
@@ -79,6 +86,10 @@ export function drawPile(ctx, cam, tiles, hot = null) {
       face.kind = f.kind;
       face.tile = tile;
       face.shade = 0.7 + 0.3 * Math.max(0, nx * LIGHT.x + ny * LIGHT.y + nz * LIGHT.z);
+      // 진짜 마작패는 모서리가 둥글다. 깎아 낼 양은 **월드에서** 정하고 (TILE3D.round)
+      // 변 길이로 나눠 비율로 넘긴다 — 그래야 옆면과 앞면이 같은 자리에서 만난다.
+      face.fa = Math.min(0.45, TILE3D.round / (2 * b[f.e[0]]));
+      face.fb = Math.min(0.45, TILE3D.round / (2 * b[f.e[1]]));
       face.px[0] = c0.sx; face.py[0] = c0.sy;
       face.px[1] = c1.sx; face.py[1] = c1.sy;
       face.px[2] = c2.sx; face.py[2] = c2.sy;
@@ -143,7 +154,12 @@ const c2s = { x: 0, y: 0, d: 0 };
 
 function paintFace(ctx, f, hot) {
   const { px, py } = f;
-  quadPath(ctx, px, py);
+  // 화면에서 아주 작은 면(멀리 있는 옆면 조각)은 모서리를 깎아 봐야 안 보인다.
+  // 300장 판을 쏟는 동안 칠하는 면이 900개가 넘으므로 그만큼이 그대로 프레임이다.
+  const area = quadArea(px, py);
+  const big = area > 140;
+  if (big) roundQuad(ctx, px, py, f.fa, f.fb);
+  else quadPath(ctx, px, py);
 
   const s = f.shade;
   if (f.kind === 'front') ctx.fillStyle = rgb(243 * s, 239 * s, 227 * s);
@@ -152,7 +168,6 @@ function paintFace(ctx, f, hot) {
   ctx.fill();
 
   // 마작패의 얼굴은 테두리보다 한 단 들어가 있다. 그 턱이 보여야 패로 읽힌다.
-  const area = quadArea(px, py);
   if (area > 90) {
     ctx.lineWidth = 1;
     ctx.strokeStyle = 'rgba(24,28,40,0.5)';
@@ -160,7 +175,7 @@ function paintFace(ctx, f, hot) {
   }
   if (f.kind === 'front') {
     if (area > 260) {
-      inset(ctx, px, py, 0.13);
+      inset(ctx, px, py, 0.13, f);
       ctx.fillStyle = rgb(255 * s, 253 * s, 246 * s);
       ctx.fill();
       ctx.lineWidth = 1;
@@ -169,7 +184,7 @@ function paintFace(ctx, f, hot) {
     }
     drawFace(ctx, f);
   } else if (f.kind === 'back' && area > 260) {
-    inset(ctx, px, py, 0.15);
+    inset(ctx, px, py, 0.15, f);
     ctx.fillStyle = rgb(52 * s, 118 * s, 210 * s);
     ctx.fill();
     ctx.lineWidth = 1;
@@ -188,7 +203,7 @@ function paintFace(ctx, f, hot) {
   }
 
   if (hot) {
-    quadPath(ctx, px, py);
+    if (big) roundQuad(ctx, px, py, f.fa, f.fb); else quadPath(ctx, px, py);
     ctx.lineWidth = 2.4;
     ctx.strokeStyle = '#46f0d0';
     if (SETTINGS.glow) { ctx.shadowColor = '#46f0d0'; ctx.shadowBlur = 12; }
@@ -206,17 +221,41 @@ function quadPath(ctx, px, py) {
   ctx.closePath();
 }
 
-/** 사각형을 중심 쪽으로 k 만큼 오므린 경로. */
-function inset(ctx, px, py, k) {
-  const cx = (px[0] + px[1] + px[2] + px[3]) / 4;
-  const cy = (py[0] + py[1] + py[2] + py[3]) / 4;
+/**
+ * 모서리를 깎은 사각형 경로.
+ *
+ * @param fa idx[0]→idx[1] 방향 변에서 잘라 낼 비율, fb 는 그 옆 변
+ *
+ * 각 꼭짓점에서 두 변을 따라 그만큼 못 미친 두 점을 잡고, 꼭짓점을 제어점으로
+ * 2차 곡선으로 잇는다. 원호가 아니라 곡선이지만 이 크기(화면에서 5~8픽셀)에서는
+ * 구분이 안 되고, 원근으로 찌그러진 사각형에서도 그대로 통한다.
+ */
+function roundQuad(ctx, px, py, fa, fb) {
+  const f = [fa, fb, fa, fb];      // i 번 변은 꼭짓점 i 에서 i+1 로 간다
   ctx.beginPath();
   for (let i = 0; i < 4; i++) {
-    const x = cx + (px[i] - cx) * (1 - k);
-    const y = cy + (py[i] - cy) * (1 - k);
-    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    const prev = (i + 3) % 4, next = (i + 1) % 4;
+    const ax = px[i] + (px[prev] - px[i]) * f[prev];
+    const ay = py[i] + (py[prev] - py[i]) * f[prev];
+    const bx = px[i] + (px[next] - px[i]) * f[i];
+    const by = py[i] + (py[next] - py[i]) * f[i];
+    if (i === 0) ctx.moveTo(ax, ay); else ctx.lineTo(ax, ay);
+    ctx.quadraticCurveTo(px[i], py[i], bx, by);
   }
   ctx.closePath();
+}
+
+/** 사각형을 중심 쪽으로 k 만큼 오므린 경로. 모서리는 겉면과 같은 정도로 깎는다. */
+function inset(ctx, px, py, k, f) {
+  const cx = (px[0] + px[1] + px[2] + px[3]) / 4;
+  const cy = (py[0] + py[1] + py[2] + py[3]) / 4;
+  const ix = [0, 0, 0, 0], iy = [0, 0, 0, 0];
+  for (let i = 0; i < 4; i++) {
+    ix[i] = cx + (px[i] - cx) * (1 - k);
+    iy[i] = cy + (py[i] - cy) * (1 - k);
+  }
+  // 변이 (1-k) 배로 짧아졌으니 같은 거리를 깎으려면 비율은 그만큼 커진다
+  roundQuad(ctx, ix, iy, Math.min(0.45, f.fa / (1 - k)), Math.min(0.45, f.fb / (1 - k)));
 }
 
 function quadArea(px, py) {
