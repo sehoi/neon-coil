@@ -31,6 +31,22 @@ export function text(ctx, str, x, y, {
   ctx.restore();
 }
 
+// 버튼 배경 그라디언트 — 세로 위치(r.y)는 안 쓰고 높이(r.h)에만 좌우되므로,
+// 화면마다 몇 종류 안 되는 (높이, active) 조합으로 캐싱해 둔다. 버튼 자리는
+// 레이아웃 상수라 조합 수가 늘어나지 않는다.
+const gradCache = new Map();
+function buttonGradient(ctx, h, active) {
+  const key = h + ':' + active;
+  let g = gradCache.get(key);
+  if (!g) {
+    g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, active ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.08)');
+    g.addColorStop(1, 'rgba(255,255,255,0.02)');
+    gradCache.set(key, g);
+  }
+  return g;
+}
+
 /**
  * 버튼 한 개.
  * @returns {object} 넘겨받은 사각형 그대로 (히트 테스트에 다시 쓴다)
@@ -42,11 +58,11 @@ export function button(ctx, r, {
   ctx.globalAlpha = disabled ? 0.38 : 1;
 
   roundRect(ctx, r.x, r.y, r.w, r.h, radius);
-  const g = ctx.createLinearGradient(0, r.y, 0, r.y + r.h);
-  g.addColorStop(0, active ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.08)');
-  g.addColorStop(1, 'rgba(255,255,255,0.02)');
-  ctx.fillStyle = g;
+  ctx.save();
+  ctx.translate(0, r.y);
+  ctx.fillStyle = buttonGradient(ctx, r.h, active);
   ctx.fill();
+  ctx.restore();
 
   ctx.lineWidth = active ? 2.6 : 1.6;
   ctx.strokeStyle = active ? accent : 'rgba(255,255,255,0.22)';
