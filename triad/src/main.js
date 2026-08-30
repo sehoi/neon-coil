@@ -419,7 +419,7 @@ function draw() {
     drawTray(ctx, s);
     drawTrayTiles(ctx, s, game.cam);
     drawComboFloat(ctx, game.floats);
-    drawHud(ctx, s, save.best);
+    drawHud(ctx, s, save);
     const hoverPower = !IS_TOUCH ? hoveredPower() : null;
     cachedPowers = drawPowers(ctx, s, hoverPower);
   }

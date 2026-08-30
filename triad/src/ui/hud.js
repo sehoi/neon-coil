@@ -3,7 +3,7 @@
 import { W, LAYOUT, SETTINGS, IS_TOUCH } from '../config.js';
 import { TRAY_CAP } from '../data/tuning.js';
 import { remaining } from '../game/pile.js';
-import { text, button, roundRect, fmtTime } from './widgets.js';
+import { text, button, roundRect, fmtTime, FONT } from './widgets.js';
 import { BTN, POWERS, powerRects } from './rects.js';
 import { drawIcon, drawGlyph } from './icons.js';
 import { drawSlot } from '../render/tiles.js';
@@ -13,7 +13,12 @@ import { ITEM_NAME, ITEM_COLOR } from './shop.js';
 const POWER_HINT = { undo: '판에 던진다', withdraw: '왼쪽 한 벌', flip: '전부 정렬', shuffle: '다시 쏟기' };
 const POWER_KEY  = { undo: 'Z', withdraw: 'X', flip: 'V', shuffle: 'C' };
 
-export function drawHud(ctx, session, best) {
+/**
+ * @param save 기록·지갑을 함께 담은 저장 객체. 골드는 여기서 왼쪽 아래 구석에
+ *   작게 보여준다 — 예전에는 상점을 열어 봐야만 보였는데, 살 것이 있는지
+ *   판단하려면 매번 상점부터 열어야 했다.
+ */
+export function drawHud(ctx, session, save) {
   // 배경 띠
   ctx.fillStyle = 'rgba(255,255,255,0.03)';
   ctx.fillRect(0, 0, W, LAYOUT.hud.h);
@@ -38,12 +43,30 @@ export function drawHud(ctx, session, best) {
     text(ctx, v, x, 118, { size: 25, color: '#dfe6f8', align: 'center', weight: '700' });
   });
 
+  // 일시정지 버튼 아래 여백에 넣는다 — "점수" 칸이 x:90 부터 시작해
+  // 자릿수가 늘어도 겹치지 않는 곳은 여기뿐이다 (68px 폭, 자릿수에 맞춰 글자를 줄인다).
+  if (save && save.wallet) {
+    const label = String(save.wallet.gold);
+    const size = label.length <= 3 ? 16 : label.length === 4 ? 14 : label.length === 5 ? 12 : 10;
+    const cx = BTN.pause.x + BTN.pause.w / 2, cy = 112;
+    ctx.save();
+    ctx.font = `700 ${size}px ${FONT}`;
+    const tw = ctx.measureText(label).width;
+    ctx.restore();
+    const r = size * 0.34, gap = 4;
+    const left = cx - (r * 2 + gap + tw) / 2;
+    drawGlyph(ctx, 'coin', left + r, cy, r, '#ffd166');
+    text(ctx, label, left + r * 2 + gap, cy, {
+      size, color: '#ffd166', align: 'left', baseline: 'middle', weight: '700',
+    });
+  }
+
   if (session.combo > 1) {
     text(ctx, `${session.combo} 연속!`, W - 22, 118, {
       size: 22, color: '#ffd166', align: 'right', weight: '700', glow: 10,
     });
-  } else if (best && best.score) {
-    text(ctx, `최고 ${best.score}`, W - 24, 118, {
+  } else if (save && save.best && save.best.score) {
+    text(ctx, `최고 ${save.best.score}`, W - 24, 118, {
       size: 18, color: 'rgba(200,208,228,0.45)', align: 'right', weight: '500',
     });
   }
