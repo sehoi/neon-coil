@@ -65,13 +65,19 @@ export function button(ctx, r, {
     });
   }
   if (badge !== null) {
+    // 자릿수가 늘어도(상점에서 계속 사 모으면 두 자리는 흔하다) 원 밖으로
+    // 글자가 새지 않도록 자릿수만큼 원과 글자를 함께 키운다.
+    const label = String(badge);
+    const digits = label.length;
+    const radius = digits <= 1 ? 17 : digits === 2 ? 19 : 22;
+    const size = digits <= 1 ? 20 : digits === 2 ? 16 : 13;
     const bx = r.x + r.w - 16, by = r.y + 16;
     ctx.beginPath();
-    ctx.arc(bx, by, 17, 0, Math.PI * 2);
+    ctx.arc(bx, by, radius, 0, Math.PI * 2);
     ctx.fillStyle = badge > 0 ? accent : 'rgba(120,126,148,0.9)';
     ctx.fill();
-    text(ctx, String(badge), bx, by + 1, {
-      size: 20, color: '#0b0d16', align: 'center', baseline: 'middle', weight: '700',
+    text(ctx, label, bx, by + 1, {
+      size, color: '#0b0d16', align: 'center', baseline: 'middle', weight: '700',
     });
   }
   ctx.restore();
