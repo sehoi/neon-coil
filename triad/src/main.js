@@ -393,10 +393,10 @@ function toggleMute() {
 let cachedPowers = null;
 
 function draw() {
-  const dpr = fitCanvas(canvas);
+  const s = game.session;
+  const dpr = fitCanvas(canvas, !s.pile.world.asleep);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  const s = game.session;
   drawBackground(ctx);
 
   // 판 영역 밖으로 타일이 새지 않게 잘라낸다
