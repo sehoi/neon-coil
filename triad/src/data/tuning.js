@@ -1,6 +1,7 @@
 // 모든 밸런싱 수치는 여기 모여 있다. 다른 파일에 상수를 흘리지 않는다.
 
 import { rnd } from '../core/rng.js';
+import { LAYOUT } from '../config.js';
 
 /**
  * 타일 한 장 (물리 단위, 반 크기). 가로 1 × 세로 1.32 × 두께 0.54.
@@ -74,10 +75,11 @@ export const TRAY_CAP = 7;
 const TILES = { min: 30, max: 300, cruise: 210, peak: 10 };
 
 /**
- * 상자의 세로/가로 비. 화면에서 판을 그리는 사각형(LAYOUT.board, 680×752)과
- * 같게 잡아야 카메라가 맞췄을 때 위아래·양옆에 빈 곳이 안 남는다.
+ * 상자의 세로/가로 비. 화면에서 판을 그리는 사각형(LAYOUT.board)과 같게
+ * 잡아야 카메라가 맞췄을 때 위아래·양옆에 빈 곳이 안 남는다. LAYOUT 에서
+ * 직접 뽑아 온다 — 화면 비를 고치고 여기를 깜빡하면 판 둘레에 빈 띠가 생긴다.
  */
-export const BOX_RATIO = 752 / 680;
+export const BOX_RATIO = LAYOUT.board.h / LAYOUT.board.w;
 
 /** 레벨 난이도 곡선. level 은 1부터. */
 export function levelSpec(level) {

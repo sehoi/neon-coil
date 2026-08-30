@@ -12,12 +12,17 @@ export const SETTINGS = {
   glow: true,
 };
 
-/** 화면 영역 (논리 좌표). */
+/**
+ * 화면 영역 (논리 좌표).
+ *
+ * 판(board)이 이 게임의 본체다. 나머지 넷(hud·tray·power·여백)은 꼭 필요한
+ * 만큼만 남기고 남는 세로 공간을 전부 판에 준다 — 타일이 그만큼 커진다.
+ */
 export const LAYOUT = {
   hud:   { x: 0,  y: 0,    w: W,   h: 132 },
-  board: { x: 20, y: 146,  w: 680, h: 752 },
-  tray:  { x: 28, y: 928,  w: 664, h: 104, slots: 7, slotW: 88, gap: 8 },
-  power: { y: 1068, h: 128, w: 158, gap: 14 },
+  board: { x: 8,  y: 138,  w: 704, h: 854 },
+  tray:  { x: 28, y: 1002, w: 664, h: 104, slots: 7, slotW: 88, gap: 8 },
+  power: { y: 1122, h: 128, w: 158, gap: 14 },
 };
 
 /** 캔버스 백버퍼를 DPR 에 맞춘다. 논리 좌표계는 항상 W×H 그대로다. */

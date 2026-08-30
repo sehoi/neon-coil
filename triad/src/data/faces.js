@@ -11,10 +11,11 @@ export const CELL_H = 174;          // 패 얼굴 비율 1 : 1.32 — TILE3D 의
 
 const MING = '"Noto Serif CJK KR", "Noto Serif KR", "Nanum Myeongjo", "Songti SC", "SimSun", "Yu Mincho", Batang, serif';
 
-const INK = '#1a1a20';
-const RED = '#c62828';
-const GREEN = '#1b7a3e';
-const BLUE = '#1f3f9e';
+// 타일이 커진 만큼 무늬도 굵고 진하게 — 예전 값보다 색을 눌러 채도를 올렸다.
+const INK = '#101014';
+const RED = '#a81f1f';
+const GREEN = '#146030';
+const BLUE = '#1a3480';
 
 // 수패 1~9 가 놓이는 자리 (칸 크기 대비 비율) 와 알의 크기.
 // 개수를 세지 않아도 배치 모양만으로 갈리도록 층수를 전부 다르게 잡았다.
@@ -115,25 +116,38 @@ function drawFace(c, kind, cjk) {
 
 // ── 조각들 ───────────────────────────────────────────────────────────────
 
+/**
+ * 굵힌 글자.
+ *
+ * CSS font-weight 는 700 을 넘겨도(900) 대부분의 명조 폰트가 더 굵어지지
+ * 않는다 — 굵은 글리프 자체가 없어서 그냥 700 으로 대체된다. 대신 채우기 전에
+ * 같은 색으로 한 번 굵게 그어(stroke) 획을 부풀린다. 안티에일리어싱으로
+ * 흐려지던 가장자리가 줄어 채도도 함께 살아난다 — "굵고 진하게"가 한 번에 된다.
+ */
+function boldText(c, text, x, y, sizePx, color, family = MING) {
+  c.font = `700 ${Math.round(sizePx)}px ${family}`;
+  c.lineJoin = 'round';
+  c.miterLimit = 2;
+  c.lineWidth = sizePx * 0.06;
+  c.strokeStyle = color;
+  c.strokeText(text, x, y);
+  c.fillStyle = color;
+  c.fillText(text, x, y);
+}
+
 /** 자패 — 글자 하나를 큼직하게. */
 function char(c, text, size, color) {
-  c.fillStyle = color;
-  c.font = `700 ${Math.round(CELL_H * size)}px ${MING}`;
   c.textAlign = 'center';
   c.textBaseline = 'middle';
-  c.fillText(text, CELL_W / 2, CELL_H * 0.52);
+  boldText(c, text, CELL_W / 2, CELL_H * 0.52, CELL_H * size, color);
 }
 
 /** 만수패 — 위에 숫자, 아래에 붉은 萬. */
 function wan(c, numeral) {
   c.textAlign = 'center';
   c.textBaseline = 'middle';
-  c.fillStyle = INK;
-  c.font = `700 ${Math.round(CELL_H * 0.42)}px ${MING}`;
-  c.fillText(numeral, CELL_W / 2, CELL_H * 0.29);
-  c.fillStyle = RED;
-  c.font = `700 ${Math.round(CELL_H * 0.42)}px ${MING}`;
-  c.fillText('萬', CELL_W / 2, CELL_H * 0.73);
+  boldText(c, numeral, CELL_W / 2, CELL_H * 0.29, CELL_H * 0.42, INK);
+  boldText(c, '萬', CELL_W / 2, CELL_H * 0.73, CELL_H * 0.42, RED);
 }
 
 /** 한자가 없을 때의 만수패 — 아라비아 숫자를 붉은 테에 앉힌다. */
@@ -142,11 +156,9 @@ function plainWan(c, n) {
   c.lineWidth = CELL_W * 0.08;
   roundRect(c, CELL_W * 0.18, CELL_H * 0.16, CELL_W * 0.64, CELL_H * 0.68, CELL_W * 0.12);
   c.stroke();
-  c.fillStyle = INK;
-  c.font = `700 ${Math.round(CELL_H * 0.42)}px ui-monospace, monospace`;
   c.textAlign = 'center';
   c.textBaseline = 'middle';
-  c.fillText(String(n), CELL_W / 2, CELL_H * 0.5);
+  boldText(c, String(n), CELL_W / 2, CELL_H * 0.5, CELL_H * 0.42, INK, 'ui-monospace, monospace');
 }
 
 /** 통수패 — 겹고리 동전 n 알. */
