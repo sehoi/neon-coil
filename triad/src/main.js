@@ -204,7 +204,7 @@ function stepShop() {
   }
   for (const name of ITEMS) {
     if (!consumeRect(r.buy && r.buy[name])) continue;
-    if (buyItem(save.wallet, name)) {
+    if (buyItem(save.wallet, name, game.session.spec.tiles)) {
       persist();
       sfx('power');
       note(`${ITEM_NAME[name]}를 샀다`);
@@ -429,7 +429,7 @@ function draw() {
     case 'pause': game.screenRects = pauseScreen(ctx, s, save.diag); break;
     case 'clear': game.screenRects = clearScreen(ctx, s); break;
     case 'over':  game.screenRects = overScreen(ctx, s, save, game.rank); break;
-    case 'shop':  game.screenRects = shopScreen(ctx, save.wallet, game.t, game.shopNote); break;
+    case 'shop':  game.screenRects = shopScreen(ctx, save.wallet, game.t, game.shopNote, game.session.spec.tiles); break;
     default:      game.screenRects = {};
   }
 }

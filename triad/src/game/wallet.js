@@ -2,7 +2,7 @@
 // 여기서 상태를 바꾸면 저장은 부르는 쪽(main)이 한다.
 
 import { rnd } from '../core/rng.js';
-import { ECONOMY, startingItems, clearReward } from '../data/tuning.js';
+import { ECONOMY, startingItems, clearReward, itemPrice } from '../data/tuning.js';
 
 /** 아이템 네 종류. 화면에 놓이는 순서이기도 하다. */
 export const ITEMS = ['undo', 'withdraw', 'flip', 'shuffle'];
@@ -34,17 +34,21 @@ export function addGold(wallet, n) {
   return wallet.gold;
 }
 
-export function price(name) {
-  return ECONOMY.price[name] || 0;
+/**
+ * @param tiles 지금 판(또는 곧 시작할 판)의 타일 수. 값은 판 크기에 맞춰
+ *   같이 오른다 — tuning.js 의 `itemPrice` 참고.
+ */
+export function price(name, tiles) {
+  return itemPrice(name, tiles);
 }
 
-export function canBuy(wallet, name) {
-  return ITEMS.includes(name) && wallet.gold >= price(name);
+export function canBuy(wallet, name, tiles) {
+  return ITEMS.includes(name) && wallet.gold >= price(name, tiles);
 }
 
-export function buyItem(wallet, name) {
-  if (!canBuy(wallet, name)) return false;
-  wallet.gold -= price(name);
+export function buyItem(wallet, name, tiles) {
+  if (!canBuy(wallet, name, tiles)) return false;
+  wallet.gold -= price(name, tiles);
   wallet.items[name]++;
   return true;
 }

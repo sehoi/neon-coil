@@ -184,8 +184,8 @@ function reward(ctx, P, got) {
   });
 }
 
-function canAffordRevive(save) {
-  return save.wallet.gold >= price('withdraw');
+function canAffordRevive(save, tiles) {
+  return save.wallet.gold >= price('withdraw', tiles);
 }
 
 export function overScreen(ctx, session, save, rank) {
@@ -215,7 +215,7 @@ export function overScreen(ctx, session, save, rank) {
     ]
     : [
       ['shop', { label: '상점', sub: '빼내기를 사면 그 자리에서 이어할 수 있다',
-        accent: '#ffd166', active: canAffordRevive(save) }],
+        accent: '#ffd166', active: canAffordRevive(save, session.spec.tiles) }],
     ];
   menu.push(['again', { label: '이 레벨 다시', accent: '#9bb0ff', active: !canRevive }]);
   menu.push(['quit', { label: '처음으로', accent: '#ff4d6d' }]);
