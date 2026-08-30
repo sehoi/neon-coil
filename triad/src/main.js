@@ -246,6 +246,7 @@ function stepPause() {
   else if (consumeRect(r.shop)) { openShop('pause'); }
   else if (consumeRect(r.restart)) { sfx('ui'); startRun(game.session.level); }
   else if (consumeRect(r.quit)) { sfx('ui'); parkRun(); }
+  else if (consumeRect(r.glow)) { SETTINGS.glow = !SETTINGS.glow; persist(); sfx('ui'); }
 }
 
 /**
