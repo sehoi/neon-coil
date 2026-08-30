@@ -1,0 +1,25 @@
+{
+  "name": "NEON TRIAD",
+  "short_name": "NEON TRIAD",
+  "description": "쏟아진 타일 더미에서 같은 무늬 셋을 모으는 3D 마작 매치 게임",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#05060d",
+  "theme_color": "#05060d",
+  "icons": [
+    {
+      "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOTIgMTkyIj48cmVjdCB3aWR0aD0iMTkyIiBoZWlnaHQ9IjE5MiIgcng9IjQwIiBmaWxsPSIjMGIwZDE2Ii8+PHJlY3QgeD0iNDYiIHk9IjQ2IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgcng9IjE2IiBmaWxsPSIjZjJmMGU2Ii8+PHJlY3QgeD0iNDYiIHk9IjQ2IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgcng9IjE2IiBmaWxsPSJub25lIiBzdHJva2U9IiMxYTM0ODAiIHN0cm9rZS13aWR0aD0iNCIvPjxwYXRoIGQ9Ik05NiA2NiBMMTI2IDk2IEw5NiAxMjYgTDY2IDk2IFoiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzFhMzQ4MCIgc3Ryb2tlLXdpZHRoPSIxMCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvc3ZnPg==",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOTIgMTkyIj48cmVjdCB3aWR0aD0iMTkyIiBoZWlnaHQ9IjE5MiIgcng9IjQwIiBmaWxsPSIjMGIwZDE2Ii8+PHJlY3QgeD0iNDYiIHk9IjQ2IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgcng9IjE2IiBmaWxsPSIjZjJmMGU2Ii8+PHJlY3QgeD0iNDYiIHk9IjQ2IiB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgcng9IjE2IiBmaWxsPSJub25lIiBzdHJva2U9IiMxYTM0ODAiIHN0cm9rZS13aWR0aD0iNCIvPjxwYXRoIGQ9Ik05NiA2NiBMMTI2IDk2IEw5NiAxMjYgTDY2IDk2IFoiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzFhMzQ4MCIgc3Ryb2tlLXdpZHRoPSIxMCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvc3ZnPg==",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
