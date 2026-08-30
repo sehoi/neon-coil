@@ -41,7 +41,10 @@ const game = {
   shopFrom: 'title',                     // 상점을 닫으면 돌아갈 화면
   shopNote: null,                        // 방금 사거나 받은 것 한 줄
   shopNoteT: 0,
+  restartArmedAt: 0,                     // "이 레벨 다시" 첫 탭 시각 (0 이면 아직 안 눌렀다)
 };
+
+const RESTART_CONFIRM_WINDOW = 3; // 이 안에 한 번 더 눌러야 실제로 다시 쏟는다
 
 seed((Date.now() ^ 0x9e3779b9) >>> 0);
 newSession(1);
@@ -240,12 +243,21 @@ function stepPlay() {
   }
 }
 
+function restartArmed() {
+  return game.restartArmedAt > 0 && game.t - game.restartArmedAt < RESTART_CONFIRM_WINDOW;
+}
+
 function stepPause() {
   const r = game.screenRects;
-  if (consumeRect(r.resume) || key('Escape') || key('KeyP')) { game.state = 'play'; sfx('ui'); }
-  else if (consumeRect(r.shop)) { openShop('pause'); }
-  else if (consumeRect(r.restart)) { sfx('ui'); startRun(game.session.level); }
-  else if (consumeRect(r.quit)) { sfx('ui'); parkRun(); }
+  if (consumeRect(r.resume) || key('Escape') || key('KeyP')) {
+    game.state = 'play'; game.restartArmedAt = 0; sfx('ui');
+  } else if (consumeRect(r.shop)) { openShop('pause'); game.restartArmedAt = 0; }
+  else if (consumeRect(r.restart)) {
+    // 잘못 눌러 진행 중인 판을 통째로 버리는 일을 막는다 — 첫 탭은 확인만 하고,
+    // 정해진 시간(3초) 안에 다시 눌러야 실제로 다시 쏟는다.
+    if (restartArmed()) { sfx('ui'); game.restartArmedAt = 0; startRun(game.session.level); }
+    else { sfx('ui'); game.restartArmedAt = game.t; }
+  } else if (consumeRect(r.quit)) { sfx('ui'); game.restartArmedAt = 0; parkRun(); }
   else if (consumeRect(r.glow)) { SETTINGS.glow = !SETTINGS.glow; persist(); sfx('ui'); }
 }
 
@@ -427,7 +439,7 @@ function draw() {
 
   switch (game.state) {
     case 'title': game.screenRects = titleScreen(ctx, save, game.t, loadRun()); break;
-    case 'pause': game.screenRects = pauseScreen(ctx, s, save.diag); break;
+    case 'pause': game.screenRects = pauseScreen(ctx, s, save.diag, restartArmed()); break;
     case 'clear': game.screenRects = clearScreen(ctx, s); break;
     case 'over':  game.screenRects = overScreen(ctx, s, save, game.rank); break;
     case 'shop':  game.screenRects = shopScreen(ctx, save.wallet, game.t, game.shopNote, game.session.spec.tiles); break;

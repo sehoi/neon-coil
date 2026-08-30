@@ -82,7 +82,7 @@ function itemLine(wallet) {
   return parts.length ? parts.join(' · ') : '아이템이 없다';
 }
 
-export function pauseScreen(ctx, session, diag = null) {
+export function pauseScreen(ctx, session, diag = null, restartArmed = false) {
   dim(ctx);
   panel(ctx, PANEL, { accent: 'rgba(70,240,208,0.35)' });
 
@@ -112,7 +112,10 @@ export function pauseScreen(ctx, session, diag = null) {
   const [resume, shop, restart, quit] = stackedButtons(4, { h: 76, gap: 12 });
   button(ctx, resume, { label: '계속하기', accent: '#46f0d0', active: true });
   button(ctx, shop, { label: '상점', accent: '#ffd166' });
-  button(ctx, restart, { label: '이 레벨 다시', accent: '#9bb0ff' });
+  // 진행 중인 판을 통째로 버리는 버튼이라, 한 번 더 눌러야 실행된다.
+  button(ctx, restart, restartArmed
+    ? { label: '한 번 더 누르면 다시 쏟는다', accent: '#ff4d6d', active: true }
+    : { label: '이 레벨 다시', accent: '#9bb0ff' });
   button(ctx, quit, { label: '처음으로', accent: '#ff4d6d' });
   return { resume, shop, restart, quit, glow };
 }
