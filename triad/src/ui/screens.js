@@ -1,7 +1,7 @@
 // 오버레이 화면들. 각 함수는 그린 버튼 사각형을 돌려주고, main 이 그걸로 탭을 판정한다.
 // 그리는 좌표와 누르는 좌표가 갈라지지 않게 하려는 것이다.
 
-import { W, IS_TOUCH } from '../config.js';
+import { W, IS_TOUCH, SETTINGS } from '../config.js';
 import { SCORE } from '../data/tuning.js';
 import { text, button, panel, dim, fmtTime } from './widgets.js';
 import { PANEL, CLEAR_PANEL, OVER_PANEL, stackedButtons } from './rects.js';
@@ -82,7 +82,7 @@ function itemLine(wallet) {
   return parts.length ? parts.join(' · ') : '아이템이 없다';
 }
 
-export function pauseScreen(ctx, session, diag = null) {
+export function pauseScreen(ctx, session, diag = null, restartArmed = false) {
   dim(ctx);
   panel(ctx, PANEL, { accent: 'rgba(70,240,208,0.35)' });
 
@@ -101,12 +101,23 @@ export function pauseScreen(ctx, session, diag = null) {
     size: 22, color: 'rgba(220,228,246,0.7)', align: 'center', weight: '500',
   });
 
+  // 키보드 G 로만 켜고 끄던 것을 여기서도 누를 수 있게 한다. 제목과 버튼 줄
+  // 사이에 빈 자리가 있어 새로 칸을 늘리지 않아도 들어간다.
+  const glow = { x: PANEL.x + 48, y: PANEL.y + 194, w: PANEL.w - 96, h: 64 };
+  button(ctx, glow, {
+    label: SETTINGS.glow ? '반짝임 효과 · 켜짐' : '반짝임 효과 · 꺼짐',
+    accent: '#ffd166', active: SETTINGS.glow,
+  });
+
   const [resume, shop, restart, quit] = stackedButtons(4, { h: 76, gap: 12 });
   button(ctx, resume, { label: '계속하기', accent: '#46f0d0', active: true });
   button(ctx, shop, { label: '상점', accent: '#ffd166' });
-  button(ctx, restart, { label: '이 레벨 다시', accent: '#9bb0ff' });
+  // 진행 중인 판을 통째로 버리는 버튼이라, 한 번 더 눌러야 실행된다.
+  button(ctx, restart, restartArmed
+    ? { label: '한 번 더 누르면 다시 쏟는다', accent: '#ff4d6d', active: true }
+    : { label: '이 레벨 다시', accent: '#9bb0ff' });
   button(ctx, quit, { label: '처음으로', accent: '#ff4d6d' });
-  return { resume, shop, restart, quit };
+  return { resume, shop, restart, quit, glow };
 }
 
 export function clearScreen(ctx, session) {
@@ -184,8 +195,8 @@ function reward(ctx, P, got) {
   });
 }
 
-function canAffordRevive(save) {
-  return save.wallet.gold >= price('withdraw');
+function canAffordRevive(save, tiles) {
+  return save.wallet.gold >= price('withdraw', tiles);
 }
 
 export function overScreen(ctx, session, save, rank) {
@@ -215,7 +226,7 @@ export function overScreen(ctx, session, save, rank) {
     ]
     : [
       ['shop', { label: '상점', sub: '빼내기를 사면 그 자리에서 이어할 수 있다',
-        accent: '#ffd166', active: canAffordRevive(save) }],
+        accent: '#ffd166', active: canAffordRevive(save, session.spec.tiles) }],
     ];
   menu.push(['again', { label: '이 레벨 다시', accent: '#9bb0ff', active: !canRevive }]);
   menu.push(['quit', { label: '처음으로', accent: '#ff4d6d' }]);
